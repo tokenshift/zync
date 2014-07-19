@@ -10,10 +10,10 @@ specified, as well as the root path to sync (by default, the current working
 directory).
 
 The local node is started with the command `zync -c {remote node}`. By default,
-Zync runs in non-destructive, non-interactive mode (see options below); thiswill
-copy files _from_ the local node _to_ the remote node without overwriting any
-files on the remote node. Warnings will be issued for any conflicts, but they
-will not be changed on either node.
+Zync runs in non-destructive, non-interactive mode (see options below); this
+will copy files _from_ the local node _to_ the remote node without overwriting
+any files on the remote node. Warnings will be issued for any conflicts, but
+they will not be changed on either node.
 
 ## Options
 
