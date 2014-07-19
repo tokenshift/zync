@@ -3,12 +3,12 @@ package main
 import "fmt"
 import "net"
 
-func runDaemon() {
-	fmt.Println("Zync daemon starting...")
+func runServer() {
+	fmt.Println("Zync server starting...")
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	checkError(err)
 
-	fmt.Printf("Zync daemon started on port %d.\n", port)
+	fmt.Printf("Zync server started on port %d.\n", port)
 	for {
 		conn, err := listener.Accept()
 		checkError(err)

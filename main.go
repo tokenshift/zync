@@ -33,7 +33,7 @@ func main() {
 			port = int(portNum)
 		}
 
-		runDaemon()
+		runServer()
 	} else if connect {
 		if connectUri == "" {
 			fmt.Fprintln(os.Stderr, "--connect (-c) requires a URI.")
@@ -45,7 +45,7 @@ func main() {
 		autoDelete, args = argFlag(args, "delete", "d")
 		reverse, args = argFlag(args, "reverse", "r")
 
-		runLocal(connectUri)
+		runClient(connectUri)
 	} else {
 		fmt.Fprintln(os.Stderr, "One of --connect (-c), --daemon (-d) must be specified.")
 	}
