@@ -8,11 +8,11 @@ func main() {
 	args := os.Args
 
 	// Determine the run mode.
-	daemon, args := argFlag(args, "daemon", "d")
-	connect, connectUri, args := argOption(args, "connect", "c")
+	server, args := argFlag(args, "server", "s")
+	client, connectUri, args := argOption(args, "connect", "c")
 
-	if daemon && connect {
-		fmt.Fprintln(os.Stderr, "Only one of --connect (-c), --daemon (-d) can be specified.")
+	if server && client {
+		fmt.Fprintln(os.Stderr, "Only one of --connect (-c), --server (-s) can be specified.")
 		os.Exit(1)
 	}
 
@@ -21,8 +21,8 @@ func main() {
 	interactive, args = argFlag(args, "interactive", "i")
 	verbose, args = argFlag(args, "verbose", "v")
 
-	if daemon {
-		// Daemon mode.
+	if server {
+		// Server mode.
 		portSpecified, portStr, _ := argOption(args, "port", "p")
 		if portSpecified {
 			portNum, err := strconv.ParseInt(portStr, 10, 0)
@@ -34,20 +34,20 @@ func main() {
 		}
 
 		runServer()
-	} else if connect {
+	} else if client {
+		// Client mode.
 		if connectUri == "" {
 			fmt.Fprintln(os.Stderr, "--connect (-c) requires a URI.")
 			os.Exit(1)
 		}
 
-		// Local mode.
 		_, keepWhose, args = argOption(args, "keep", "k")
 		autoDelete, args = argFlag(args, "delete", "d")
 		reverse, args = argFlag(args, "reverse", "r")
 
 		runClient(connectUri)
 	} else {
-		fmt.Fprintln(os.Stderr, "One of --connect (-c), --daemon (-d) must be specified.")
+		fmt.Fprintln(os.Stderr, "One of --connect (-c), --server (-s) must be specified.")
 	}
 }
 

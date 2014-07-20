@@ -4,10 +4,10 @@ Simple two-node file syncing service.
 
 ## Use
 
-There are two nodes involved in the exchange: one local, and one remote. The
-remote node is started with the command `zync -d`. Port and proxy can be
-specified, as well as the root path to sync (by default, the current working
-directory).
+There are two nodes involved in the exchange: one local (the client), and one
+remote (the server). The remote node is started with the command `zync -s`.
+Port and proxy can be specified, as well as the root path to sync (by default,
+the current working directory).
 
 The local node is started with the command `zync -c {remote node}`. By default,
 Zync runs in non-destructive, non-interactive mode (see options below); this
@@ -17,8 +17,8 @@ they will not be changed on either node.
 
 ## Options
 
-**`--daemon, -d`** 
-Runs the node in daemon mode. Non-interactive only.
+**`--server, -s`** 
+Runs the node in server mode. Non-interactive only.
 
 **`--port {number}, -p {number}`** 
 For daemon mode only; serves at the specified port. By default, the port 20741
