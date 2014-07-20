@@ -51,10 +51,10 @@ func main() {
 	}
 }
 
-// Simple error handling function. Prints the error to STDOUT and exits.
+// Simple error handling function. Prints the error to STDOUT and panics.
 func checkError(err error) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		panic(err)
 	}
 }
