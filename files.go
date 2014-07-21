@@ -6,8 +6,8 @@ import "os"
 
 // Recursively navigates the filesystem from the specified root in alphabetical
 // order, returning all files/folders found.
-func enumerateFiles(root string) (<-chan string) {
-	out := make(chan string)
+func enumerateFiles(root string) (<-chan FileInfo) {
+	out := make(chan FileInfo)
 
 	go func() {
 	  defer func() {
@@ -21,7 +21,11 @@ func enumerateFiles(root string) (<-chan string) {
       } else {
         path, err = filepath.Rel(root, path)
         if err == nil {
-          out <- path
+          out <- FileInfo {
+            Path: path,
+            IsDir: info.IsDir(),
+            Size: info.Size(),
+          }
         }
         return err
       }

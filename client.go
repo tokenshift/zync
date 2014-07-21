@@ -31,7 +31,7 @@ func runClient(connectUri string) {
 	checkError(err)
 
 	// Version Check
-	checkError(sendVersion(conn, ProtoVersion))
+	checkError(sendVersion(conn))
 	accepted, err := recvBool(conn)
 	checkError(err)
 	if !accepted {
@@ -58,10 +58,10 @@ func runClient(connectUri string) {
   myNext, myAny := <-myFiles
   svrNext, svrAny := requestNextFileInfo(conn)
   for myAny || svrAny {
-    if svrAny && (!myAny || svrNext < myNext) {
+    if svrAny && (!myAny || svrNext.Path < myNext.Path) {
       fmt.Println("TODO: Request", svrNext, "from server")
       svrNext, svrAny = requestNextFileInfo(conn)
-    } else if myAny && (!svrAny || svrNext > myNext) {
+    } else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
       fmt.Println("TODO: Send", myNext, "to server")
       myNext, myAny = <-myFiles
     } else {
@@ -73,16 +73,16 @@ func runClient(connectUri string) {
 }
 
 // Asks the server for and receives the next file that it sees.
-func requestNextFileInfo(conn net.Conn) (string, bool) {
+func requestNextFileInfo(conn net.Conn) (FileInfo, bool) {
   checkError(sendUint32(conn, RequestNextFileInfo))
   yes, err := recvBool(conn)
   checkError(err)
 
   if yes {
-    name, err := recvFilename(conn)
+    fi, err := recvFileInfo(conn)
     checkError(err)
-    return name, true
+    return fi, true
   } else {
-    return "", false
+    return FileInfo{}, false
   }
 }

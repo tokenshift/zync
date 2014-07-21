@@ -57,10 +57,10 @@ func handleConnection(conn net.Conn, root string) {
 
     switch(cmd) {
     case RequestNextFileInfo:
-      fname, ok := <-files
+      fi, ok := <-files
       if ok {
         checkError(sendBool(conn, true))
-        checkError(sendFilename(conn, fname))
+        checkError(sendFileInfo(conn, fi))
       } else {
         checkError(sendBool(conn, false))
       }
