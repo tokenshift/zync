@@ -3,171 +3,498 @@ package main
 import "encoding/binary"
 import "fmt"
 import "io"
+import "time"
+
+type Version int32
 
 // Current protocol is v1.
-const ProtoVersion uint32 = 1
+const ProtoVersion Version = 1
 
-// Arbitrary limit to avoid allocating absurd buffer space.
-const MaxFilenameLength uint32 = 1024
+// Limits to avoid allocating absurd buffer space.
+const MaxStringLength int32 = 1024
+const MaxTimeLength int32 = 16
 
-// Enumeration of commands.
+// Message terminator, to help debug protocol issues.
+const MessageTerminator int32 = 20741
+
+type Message interface{}
+
+// Message types.
+type MessageType int32
 const (
-  RequestNextFileInfo uint32 = iota
+  MsgBool MessageType = iota
+  MsgCommand
+  MsgFileInfo
+  MsgInt32
+  MsgInt64
+  MsgString
+  MsgTime
+  MsgVersion
 )
 
-
-///////////////////////
-//  Basic Types
-///////////////////////
-
-// Sends the protocol version currently being used.
-func sendVersion(conn io.Writer) error {
-	return sendUint32(conn, ProtoVersion)
+var MessageTypeNames = map[MessageType]string {
+  MsgBool: "MsgBool",
+  MsgCommand: "MsgCommand",
+  MsgFileInfo: "MsgFileInfo",
+  MsgInt32: "MsgInt32",
+  MsgInt64: "MsgInt64",
+  MsgString: "MsgString",
+  MsgTime: "MsgTime",
+  MsgVersion: "MsgVersion",
 }
 
-// Receives the requested/asserted protocol version.
-func recvVersion(conn io.Reader) (uint32, error) {
-	return recvUint32(conn)
-}
-
-// Sends a single byte representing true (1) or false (0).
-func sendBool(conn io.Writer, val bool) error {
-	var b byte = 0
-	if val {
-		b = 1
-	}
-
-	_, err := conn.Write([]byte { b })
-	return err
-}
-
-// Receives a single byte representing a true (1) or false (0).
-func recvBool(conn io.Reader) (bool, error) {
-	b := make([]byte, 1)
-	_, err := conn.Read(b)
-	if b[0] == 0 {
-		return false, err
-	} else {
-		return true, err
-	}
-}
-
-func sendInt64(conn io.Writer, val int64) error {
-	return binary.Write(conn, binary.BigEndian, val)
-}
-
-func recvInt64(conn io.Reader) (int64, error) {
-	var val int64
-	err := binary.Read(conn, binary.BigEndian, &val)
-	return val, err
-}
-
-func sendUint32(conn io.Writer, val uint32) error {
-	return binary.Write(conn, binary.BigEndian, val)
-}
-
-func recvUint32(conn io.Reader) (uint32, error) {
-	var val uint32
-	err := binary.Read(conn, binary.BigEndian, &val)
-	return val, err
-}
-
-
-///////////////////////
-//  File Info
-///////////////////////
+// Enumeration of commands.
+type Command int32
+const (
+  CmdRequestNextFileInfo Command = iota
+)
 
 type FileInfo struct {
   Path string
   IsDir bool
+  ModTime time.Time
   Size int64
 }
 
-func sendFileInfo(conn io.Writer, fi FileInfo) error {
-  err := sendString(conn, fi.Path)
-  if err != nil {
-    return err
+// Writes a message to the connection.
+func send(conn io.Writer, msg Message) (err error) {
+  switch msg := msg.(type) {
+  default:
+    err = fmt.Errorf("Unexpected type: %T", msg)
+  case bool:
+    err = sendBool(conn, msg)
+  case Command:
+    err = sendCommand(conn, msg)
+  case FileInfo:
+    err = sendFileInfo(conn, msg)
+  case int32:
+    err = sendInt32(conn, msg)
+  case int64:
+    err = sendInt64(conn, msg)
+  case string:
+    err = sendString(conn, msg)
+  case time.Time:
+    err = sendTime(conn, msg)
+  case Version:
+    err = sendVersion(conn, msg)
   }
 
-  err = sendBool(conn, fi.IsDir)
-  if err != nil {
-    return err
+  if err == nil {
+    err = writeInt32(conn, MessageTerminator)
   }
 
-  err = sendInt64(conn, fi.Size)
-  return err
+  return
+}
+
+// Reads a message from the connection.
+func recv(conn io.Reader) (msg Message, err error) {
+  msgType, err := recvMessageType(conn)
+	if err != nil {
+	  return
+  }
+
+  msg, err = read(conn, msgType)
+  if err == nil {
+    err = checkMessageTerminator(conn)
+  }
+
+  return
+}
+
+// Reads message data from the connection.
+func read(conn io.Reader, msgType MessageType) (msg Message, err error) {
+  switch msgType {
+  default:
+    err = fmt.Errorf("Unexpected message type: %d", msgType)
+  case MsgBool:
+    msg, err = recvBool(conn)
+  case MsgCommand:
+    msg, err = recvCommand(conn)
+  case MsgFileInfo:
+    msg, err = recvFileInfo(conn)
+  case MsgInt32:
+    msg, err = recvInt32(conn)
+  case MsgInt64:
+    msg, err = recvInt64(conn)
+  case MsgString:
+    msg, err = recvString(conn)
+  case MsgTime:
+    msg, err = recvTime(conn)
+  case MsgVersion:
+    msg, err = recvVersion(conn)
+  }
+
+  return
+}
+
+// Reads a message from the connection, checking that it is the expected type.
+func expect(conn io.Reader, mt MessageType) (msg Message, err error) {
+  msgType, err := recvMessageType(conn)
+	if err != nil {
+	  return
+  }
+
+  if msgType != mt {
+    if name, ok := MessageTypeNames[msgType]; ok {
+      err = fmt.Errorf("Expected message type %v, got %v", MessageTypeNames[mt], name)
+    } else {
+      err = fmt.Errorf("Expected message type %v, got unknown type: %v", MessageTypeNames[mt], msgType)
+    }
+    return
+  }
+
+  msg, err = read(conn, msgType)
+  if err == nil {
+    err = checkMessageTerminator(conn)
+  }
+
+  return
+}
+
+func checkMessageTerminator(conn io.Reader) (err error) {
+  term, err := recvInt32(conn)
+
+  if err == nil && term != MessageTerminator {
+    err = fmt.Errorf("Expected message terminator (%d), got: %d", MessageTerminator, term)
+  }
+
+  return
+}
+
+// Send/receive definitions
+// send: Sends the message type followed by the message data.
+// write: Sends only the raw message data.
+// recv: Assumes message type has already been read, reads only the message
+// data. Validates that data matches the expected type/constraints.
+// expect: Consumes a message type (asserting that it matches the expected
+// type) and the message data, then checks the message terminator.
+
+func sendBool(conn io.Writer, b bool) (err error) {
+  err = writeMessageType(conn, MsgBool)
+  if err != nil {
+    return
+  }
+  if b {
+    err = writeByte(conn, 1)
+  } else {
+    err = writeByte(conn, 0)
+  }
+  return
+}
+
+func recvBool(conn io.Reader) (b bool, err error) {
+  bt, err := recvByte(conn)
+  if err != nil {
+    return
+  }
+
+  return bt != 0, nil
+}
+
+func expectBool(conn io.Reader) (b bool, err error) {
+  msg, err := recv(conn)
+  if err != nil {
+    return
+  }
+
+  var ok bool
+  if b, ok = msg.(bool); !ok {
+    err = fmt.Errorf("Expected bool, got %T: %v", msg, msg)
+  }
+
+  return
+}
+
+func recvByte(conn io.Reader) (b byte, err error) {
+  buf := make([]byte, 1)
+  _, err = io.ReadFull(conn, buf)
+  return buf[0], err
+}
+
+func writeByte(conn io.Writer, b byte) (err error) {
+  _, err = conn.Write([]byte { b })
+  return
+}
+
+func sendCommand(conn io.Writer, cmd Command) (err error) {
+  err = writeMessageType(conn, MsgCommand)
+  if err != nil {
+    return
+  }
+
+  err = writeInt32(conn, int32(cmd))
+  return
+}
+
+func recvCommand(conn io.Reader) (cmd Command, err error) {
+  c, err := recvInt32(conn)
+  return Command(c), err
+}
+
+func expectCommand(conn io.Reader) (cmd Command, err error) {
+  msg, err := recv(conn)
+  if err != nil {
+    return
+  }
+
+  var ok bool
+  if cmd, ok = msg.(Command); !ok {
+    err = fmt.Errorf("Expected Command, got %T: %v", msg, msg)
+  }
+
+  return
+}
+
+func sendFileInfo(conn io.Writer, fi FileInfo) (err error) {
+  err = writeMessageType(conn, MsgFileInfo)
+  if err != nil {
+    return
+  }
+
+  err = send(conn, fi.Path)
+  if err != nil {
+    return
+  }
+
+  err = send(conn, fi.IsDir)
+  if err != nil {
+    return
+  }
+
+  err = send(conn, fi.ModTime)
+  if err != nil {
+    return
+  }
+
+  err = send(conn, fi.Size)
+  return
 }
 
 func recvFileInfo(conn io.Reader) (fi FileInfo, err error) {
-  path, err := recvString(conn)
+  path, err := expectString(conn)
   if err != nil {
     return
   }
 
-  isDir, err := recvBool(conn)
+  isDir, err := expectBool(conn)
   if err != nil {
     return
   }
 
-  size, err := recvInt64(conn)
+  modTime, err := expectTime(conn)
+  if err != nil {
+    return
+  }
+
+  size, err := expectInt64(conn)
   if err != nil {
     return
   }
 
   fi.Path = path
   fi.IsDir = isDir
+  fi.ModTime = modTime
   fi.Size = size
   return
 }
 
-// Writes a string with length prefix to the connection.
-func sendString(conn io.Writer, fname string) error {
-  // A filename is sent as a uint32 byte length, followed by the bytes of the
-  // string itself.
-  err := sendUint32(conn, uint32(len(fname)))
+func expectFileInfo(conn io.Reader) (fi FileInfo, err error) {
+  msg, err := recv(conn)
   if err != nil {
-    return err
+    return
   }
 
-  _, err = conn.Write([]byte(fname))
-  return err
+  var ok bool
+  if fi, ok = msg.(FileInfo); !ok {
+    err = fmt.Errorf("Expected FileInfo, got %T: %v", msg, msg)
+  }
+
+  return
 }
 
-
-var fnameBuffer = make([]byte, MaxFilenameLength)
-
-// Reads a string with length prefix from the connection.
-func recvString(conn io.Reader) (string, error) {
-  length, err := recvUint32(conn)
+func sendInt32(conn io.Writer, val int32) (err error) {
+  err = writeMessageType(conn, MsgInt32)
   if err != nil {
-    return "", err
-  }
-  if length > MaxFilenameLength {
-    return "", fmt.Errorf("Filename length %d exceed max buffer size %d.", length, MaxFilenameLength)
+    return
   }
 
-  err = recvFully(conn, fnameBuffer, length)
-  if err != nil {
-    return "", err
-  }
-
-  return string(fnameBuffer[:length]), nil
+  return writeInt32(conn, val)
 }
 
-// Attempts to fill the provided buffer with data read from the connection.
-func recvFully(conn io.Reader, buffer []byte, length uint32) error {
-  if length > uint32(len(buffer)) {
-    panic(fmt.Errorf("Cannot read %d bytes into buffer of size %d.", length, len(buffer)))
+func recvInt32(conn io.Reader) (val int32, err error) {
+	err = binary.Read(conn, binary.BigEndian, &val)
+	return
+}
+
+func writeInt32(conn io.Writer, val int32) (err error) {
+	return binary.Write(conn, binary.BigEndian, val)
+}
+
+func sendInt64(conn io.Writer, val int64) (err error) {
+  err = writeMessageType(conn, MsgInt64)
+  if err != nil {
+    return
   }
 
-  var count uint32 = 0
-  for count < length {
-    c, err := conn.Read(buffer[count:])
-    if err != nil {
-      return err
-    }
-    count += uint32(c)
+  return writeInt64(conn, val)
+}
+
+func recvInt64(conn io.Reader) (val int64, err error) {
+	err = binary.Read(conn, binary.BigEndian, &val)
+	return
+}
+
+func expectInt64(conn io.Reader) (val int64, err error) {
+  msg, err := recv(conn)
+  if err != nil {
+    return
   }
 
-  return nil
+  var ok bool
+  if val, ok = msg.(int64); !ok {
+    err = fmt.Errorf("Expected int64, got %T: %v", msg, msg)
+  }
+
+  return
+}
+
+func writeInt64(conn io.Writer, val int64) error {
+	return binary.Write(conn, binary.BigEndian, val)
+}
+
+func recvMessageType(conn io.Reader) (mt MessageType, err error) {
+  var msgType uint32
+	err = binary.Read(conn, binary.BigEndian, &msgType)
+	return MessageType(msgType), err
+}
+
+func writeMessageType(conn io.Writer, mt MessageType) (err error) {
+  return writeInt32(conn, int32(mt))
+}
+
+func sendString(conn io.Writer, s string) (err error) {
+  err = writeMessageType(conn, MsgString)
+  if err != nil {
+    return
+  }
+
+  err = writeInt32(conn, int32(len(s)))
+  if err != nil {
+    return
+  }
+
+  _, err = conn.Write([]byte(s))
+  return
+}
+
+func recvString(conn io.Reader) (s string, err error) {
+  length, err := recvInt32(conn)
+  if err != nil {
+    return
+  }
+  if length > MaxStringLength {
+    err = fmt.Errorf("String of length %d exceeds max of %d", length, MaxStringLength)
+    return
+  }
+
+  buffer := make([]byte, length)
+  _, err = io.ReadFull(conn, buffer)
+  return string(buffer), err
+}
+
+func expectString(conn io.Reader) (s string, err error) {
+  msg, err := recv(conn)
+  if err != nil {
+    return
+  }
+
+  var ok bool
+  if s, ok = msg.(string); !ok {
+    err = fmt.Errorf("Expected string, got %T: %v", msg, msg)
+  }
+
+  return
+}
+
+func sendTime(conn io.Writer, t time.Time) (err error) {
+  err = writeMessageType(conn, MsgTime)
+  if err != nil {
+    return
+  }
+
+  buf, err := t.MarshalBinary()
+  if err != nil {
+    return
+  }
+
+  err = writeInt32(conn, int32(len(buf)))
+  if err != nil {
+    return
+  }
+
+  _, err = conn.Write(buf)
+  return
+}
+
+func recvTime(conn io.Reader) (t time.Time, err error) {
+  length, err := recvInt32(conn)
+  if err != nil {
+    return
+  }
+  if length > MaxTimeLength {
+    err = fmt.Errorf("Time of length %d exceeds max of %d", length, MaxTimeLength)
+    return
+  }
+
+  buf := make([]byte, length)
+  _, err = io.ReadFull(conn, buf)
+  if err != nil {
+    return
+  }
+
+  err = t.UnmarshalBinary(buf)
+  return
+}
+
+func expectTime(conn io.Reader) (t time.Time, err error) {
+  msg, err := recv(conn)
+  if err != nil {
+    return
+  }
+
+  var ok bool
+  if t, ok = msg.(time.Time); !ok {
+    err = fmt.Errorf("Expected time, got %T: %v", msg, msg)
+  }
+
+  return
+}
+
+func sendVersion(conn io.Writer, v Version) (err error) {
+  err = writeMessageType(conn, MsgVersion)
+  if err != nil {
+    return
+  }
+
+  err = writeInt32(conn, int32(v))
+  return
+}
+
+func recvVersion(conn io.Reader) (v Version, err error) {
+  ver, err := recvInt32(conn)
+  return Version(ver), err
+}
+
+func expectVersion(conn io.Reader) (v Version, err error) {
+  msg, err := recv(conn)
+  if err != nil {
+    return
+  }
+
+  var ok bool
+  if v, ok = msg.(Version); !ok {
+    err = fmt.Errorf("Expected Version, got %T: %v", msg, msg)
+  }
+
+  return
 }

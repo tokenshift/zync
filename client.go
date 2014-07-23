@@ -31,8 +31,8 @@ func runClient(connectUri string) {
 	checkError(err)
 
 	// Version Check
-	checkError(sendVersion(conn))
-	accepted, err := recvBool(conn)
+	checkError(send(conn, ProtoVersion))
+	accepted, err := expectBool(conn)
 	checkError(err)
 	if !accepted {
 		fmt.Fprintln(os.Stderr, "Server rejected protocol version", ProtoVersion)
@@ -74,12 +74,12 @@ func runClient(connectUri string) {
 
 // Asks the server for and receives the next file that it sees.
 func requestNextFileInfo(conn net.Conn) (FileInfo, bool) {
-  checkError(sendUint32(conn, RequestNextFileInfo))
-  yes, err := recvBool(conn)
+  checkError(send(conn, CmdRequestNextFileInfo))
+  yes, err := expectBool(conn)
   checkError(err)
 
   if yes {
-    fi, err := recvFileInfo(conn)
+    fi, err := expectFileInfo(conn)
     checkError(err)
     return fi, true
   } else {

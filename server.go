@@ -34,21 +34,21 @@ func handleConnection(conn net.Conn, root string) {
 
 	fmt.Println("Client connected:", conn.RemoteAddr())
 
-	version, err := recvVersion(conn)
+	version, err := expectVersion(conn)
 	checkError(err)
 
 	fmt.Println("Client requested protocol version:", version)
 	if version != ProtoVersion {
 		// Exact match on version is required (currently).
-		sendBool(conn, false)
+		checkError(send(conn, false))
 		return
 	} else {
-		checkError(sendBool(conn, true))
+		checkError(send(conn, true))
 	}
 
   files := enumerateFiles(root)
   for {
-    cmd, err := recvUint32(conn)
+    cmd, err := expectCommand(conn)
     if err == io.EOF {
       return
     }
@@ -56,13 +56,13 @@ func handleConnection(conn net.Conn, root string) {
     checkError(err)
 
     switch(cmd) {
-    case RequestNextFileInfo:
+    case CmdRequestNextFileInfo:
       fi, ok := <-files
       if ok {
-        checkError(sendBool(conn, true))
-        checkError(sendFileInfo(conn, fi))
+        checkError(send(conn, true))
+        checkError(send(conn, fi))
       } else {
-        checkError(sendBool(conn, false))
+        checkError(send(conn, false))
       }
     default:
       panic(fmt.Errorf("Unrecognized client command: %d", cmd))

@@ -25,6 +25,7 @@ func enumerateFiles(root string) (<-chan FileInfo) {
             Path: path,
             IsDir: info.IsDir(),
             Size: info.Size(),
+            ModTime: info.ModTime(),
           }
         }
         return err
