@@ -11,7 +11,8 @@ type Version int32
 // Current protocol is v1.
 const ProtoVersion Version = 1
 
-// Limits to avoid allocating absurd buffer space.
+// Arbitrary limits to avoid allocating absurd amounts of space.
+const MaxFileSize int64 = 1024 * 1024 * 1024 * 32
 const MaxStringLength int32 = 1024
 const MaxTimeLength int32 = 16
 
@@ -25,6 +26,7 @@ type MessageType int32
 const (
 	MsgBool MessageType = iota
 	MsgCommand
+	MsgFile
 	MsgFileInfo
 	MsgFileRequest
 	MsgInt32
@@ -38,6 +40,7 @@ const (
 var MessageTypeNames = map[MessageType]string {
 	MsgBool: "MsgBool",
 	MsgCommand: "MsgCommand",
+	MsgFile: "MsgFile",
 	MsgFileInfo: "MsgFileInfo",
 	MsgFileRequest: "MsgFileRequest",
 	MsgInt32: "MsgInt32",

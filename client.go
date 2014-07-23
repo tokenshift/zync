@@ -1,8 +1,9 @@
 package main
 
 import "fmt"
-import "os"
+import "io"
 import "net"
+import "os"
 import "path"
 import "regexp"
 
@@ -60,13 +61,13 @@ func runClient(connectUri string) {
 	svrNext, svrAny := requestNextFileInfo(conn)
 	for myAny || svrAny {
 		if svrAny && (!myAny || svrNext.Path < myNext.Path) {
-			requestAndSaveFile(conn, root, svrNext)
+			requestAndCreateFile(conn, root, svrNext)
 			svrNext, svrAny = requestNextFileInfo(conn)
 		} else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
-			//fmt.Println("TODO: Send", myNext, "to server")
+			fmt.Println("TODO: Send", myNext, "to server")
 			myNext, myAny = <-myFiles
 		} else {
-			//fmt.Println("TODO: Compare file info for", myNext)
+			fmt.Println("TODO: Compare file info for", myNext)
 			myNext, myAny = <-myFiles
 			svrNext, svrAny = requestNextFileInfo(conn)
 		}
@@ -75,12 +76,13 @@ func runClient(connectUri string) {
 
 // Requests the specified file from the server, and saves it to the relevant
 // location on disk.
-func requestAndSaveFile(conn net.Conn, root string, fi FileInfo) {
+func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) {
+	abs := path.Join(root, fi.Path)
+
 	// If this is a folder, just go ahead and create it; no need to ask the
 	// server for anything.
 	if fi.IsDir {
 		fmt.Println("Creating folder", fi.Path)
-		abs := path.Join(root, fi.Path)
 		checkError(os.Mkdir(abs, os.ModeDir | fi.Mode))
 		return
 	}
@@ -91,6 +93,35 @@ func requestAndSaveFile(conn net.Conn, root string, fi FileInfo) {
 	checkError(err)
 
 	if yes {
+		msgType, err := recvMessageType(conn)
+		checkError(err)
+		if msgType != MsgFile {
+			panic(fmt.Errorf("Expected MsgFile (%v), got %v", MsgFile, msgType))
+		}
+
+		path, err := expectString(conn)
+		checkError(err)
+		if path != fi.Path {
+			panic(fmt.Errorf("Requested %v, server provided %v", fi.Path, path))
+		}
+
+		size, err := expectInt64(conn)
+		checkError(err)
+		if size > MaxFileSize {
+			panic(fmt.Errorf("File too large: %d bytes", size))
+		}
+
+		file, err := os.Create(abs)
+		checkError(err)
+
+		written, err := io.CopyN(file, conn, size)
+		checkError(err)
+
+		if written != size {
+			panic(fmt.Errorf("Failed to receive full contents of %s (%d bytes)", fi.Path, size))
+		}
+
+		checkError(checkMessageTerminator(conn))
 	} else {
 		fmt.Fprintln(os.Stderr, "WARNING: Server refused to provide", fi.Path)
 	}
