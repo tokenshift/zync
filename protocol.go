@@ -25,6 +25,7 @@ const (
   MsgBool MessageType = iota
   MsgCommand
   MsgFileInfo
+  MsgFileRequest
   MsgInt32
   MsgInt64
   MsgString
@@ -36,6 +37,7 @@ var MessageTypeNames = map[MessageType]string {
   MsgBool: "MsgBool",
   MsgCommand: "MsgCommand",
   MsgFileInfo: "MsgFileInfo",
+  MsgFileRequest: "MsgFileRequest",
   MsgInt32: "MsgInt32",
   MsgInt64: "MsgInt64",
   MsgString: "MsgString",
@@ -56,6 +58,10 @@ type FileInfo struct {
   Size int64
 }
 
+type FileRequest struct {
+  Path string
+}
+
 // Writes a message to the connection.
 func send(conn io.Writer, msg Message) (err error) {
   switch msg := msg.(type) {
@@ -67,6 +73,8 @@ func send(conn io.Writer, msg Message) (err error) {
     err = sendCommand(conn, msg)
   case FileInfo:
     err = sendFileInfo(conn, msg)
+  case FileRequest:
+    err = sendFileRequest(conn, msg)
   case int32:
     err = sendInt32(conn, msg)
   case int64:
@@ -87,8 +95,8 @@ func send(conn io.Writer, msg Message) (err error) {
 }
 
 // Reads a message from the connection.
-func recv(conn io.Reader) (msg Message, err error) {
-  msgType, err := recvMessageType(conn)
+func recv(conn io.Reader) (msg Message, msgType MessageType, err error) {
+  msgType, err = recvMessageType(conn)
 	if err != nil {
 	  return
   }
@@ -112,6 +120,8 @@ func read(conn io.Reader, msgType MessageType) (msg Message, err error) {
     msg, err = recvCommand(conn)
   case MsgFileInfo:
     msg, err = recvFileInfo(conn)
+  case MsgFileRequest:
+    msg, err = recvFileRequest(conn)
   case MsgInt32:
     msg, err = recvInt32(conn)
   case MsgInt64:
@@ -192,7 +202,7 @@ func recvBool(conn io.Reader) (b bool, err error) {
 }
 
 func expectBool(conn io.Reader) (b bool, err error) {
-  msg, err := recv(conn)
+  msg, _, err := recv(conn)
   if err != nil {
     return
   }
@@ -232,7 +242,7 @@ func recvCommand(conn io.Reader) (cmd Command, err error) {
 }
 
 func expectCommand(conn io.Reader) (cmd Command, err error) {
-  msg, err := recv(conn)
+  msg, _, err := recv(conn)
   if err != nil {
     return
   }
@@ -299,7 +309,7 @@ func recvFileInfo(conn io.Reader) (fi FileInfo, err error) {
 }
 
 func expectFileInfo(conn io.Reader) (fi FileInfo, err error) {
-  msg, err := recv(conn)
+  msg, _, err := recv(conn)
   if err != nil {
     return
   }
@@ -309,6 +319,26 @@ func expectFileInfo(conn io.Reader) (fi FileInfo, err error) {
     err = fmt.Errorf("Expected FileInfo, got %T: %v", msg, msg)
   }
 
+  return
+}
+
+func sendFileRequest(conn io.Writer, req FileRequest) (err error) {
+  err = writeMessageType(conn, MsgFileRequest)
+  if err != nil {
+    return
+  }
+
+  err = send(conn, req.Path)
+  return
+}
+
+func recvFileRequest(conn io.Reader) (req FileRequest, err error) {
+  path, err := expectString(conn)
+  if err != nil {
+    return
+  }
+
+  req.Path = path
   return
 }
 
@@ -345,7 +375,7 @@ func recvInt64(conn io.Reader) (val int64, err error) {
 }
 
 func expectInt64(conn io.Reader) (val int64, err error) {
-  msg, err := recv(conn)
+  msg, _, err := recv(conn)
   if err != nil {
     return
   }
@@ -403,7 +433,7 @@ func recvString(conn io.Reader) (s string, err error) {
 }
 
 func expectString(conn io.Reader) (s string, err error) {
-  msg, err := recv(conn)
+  msg, _, err := recv(conn)
   if err != nil {
     return
   }
@@ -457,7 +487,7 @@ func recvTime(conn io.Reader) (t time.Time, err error) {
 }
 
 func expectTime(conn io.Reader) (t time.Time, err error) {
-  msg, err := recv(conn)
+  msg, _, err := recv(conn)
   if err != nil {
     return
   }
@@ -486,7 +516,7 @@ func recvVersion(conn io.Reader) (v Version, err error) {
 }
 
 func expectVersion(conn io.Reader) (v Version, err error) {
-  msg, err := recv(conn)
+  msg, _, err := recv(conn)
   if err != nil {
     return
   }

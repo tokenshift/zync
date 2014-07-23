@@ -7,7 +7,7 @@ import "os"
 
 
 func runServer() {
-  root, err := os.Getwd()
+	root, err := os.Getwd()
 	checkError(err)
 
 	fmt.Println("Zync server starting...")
@@ -46,26 +46,35 @@ func handleConnection(conn net.Conn, root string) {
 		checkError(send(conn, true))
 	}
 
-  files := enumerateFiles(root)
-  for {
-    cmd, err := expectCommand(conn)
-    if err == io.EOF {
-      return
-    }
+	files := enumerateFiles(root)
+	for {
+		msg, msgType, err := recv(conn)
+		if err == io.EOF {
+			return
+		}
 
-    checkError(err)
+		checkError(err)
 
-    switch(cmd) {
-    case CmdRequestNextFileInfo:
-      fi, ok := <-files
-      if ok {
-        checkError(send(conn, true))
-        checkError(send(conn, fi))
-      } else {
-        checkError(send(conn, false))
-      }
-    default:
-      panic(fmt.Errorf("Unrecognized client command: %d", cmd))
-    }
-  }
+		switch msgType {
+		case MsgCommand:
+			switch msg.(Command) {
+			case CmdRequestNextFileInfo:
+				handleCmdRequestNextFileInfo(conn, files)
+			default:
+				panic(fmt.Errorf("Unrecognized command: %d", msg))
+			}
+		default:
+			panic(fmt.Errorf("Unrecognized message type: %d", msgType))
+		}
+	}
+}
+
+func handleCmdRequestNextFileInfo(conn net.Conn, files <-chan FileInfo) {
+	fi, ok := <-files
+	if ok {
+		checkError(send(conn, true))
+		checkError(send(conn, fi))
+	} else {
+		checkError(send(conn, false))
+	}
 }
