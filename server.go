@@ -4,7 +4,7 @@ import "fmt"
 import "io"
 import "net"
 import "os"
-
+import "path"
 
 func runServer() {
 	root, err := os.Getwd()
@@ -63,6 +63,8 @@ func handleConnection(conn net.Conn, root string) {
 			default:
 				panic(fmt.Errorf("Unrecognized command: %d", msg))
 			}
+		case MsgFileRequest:
+			handleMsgFileRequest(conn, root, msg.(FileRequest))
 		default:
 			panic(fmt.Errorf("Unrecognized message type: %d", msgType))
 		}
@@ -77,4 +79,17 @@ func handleCmdRequestNextFileInfo(conn net.Conn, files <-chan FileInfo) {
 	} else {
 		checkError(send(conn, false))
 	}
+}
+
+func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
+	fmt.Println("Client requested", req.Path)
+	
+	abs := path.Join(root, req.Path)
+	if _, err := os.Stat(abs); os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, "WARNING: Client requested nonexistant file", req.Path)
+		checkError(send(conn, false))
+		return
+	}
+
+	checkError(send(conn, true))
 }

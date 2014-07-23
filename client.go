@@ -3,6 +3,7 @@ package main
 import "fmt"
 import "os"
 import "net"
+import "path"
 import "regexp"
 
 var portRx = regexp.MustCompile(":\\d+$")
@@ -39,50 +40,73 @@ func runClient(connectUri string) {
 		os.Exit(1)
 	}
 
-  // Synchronization process:
-  // 1. Client asks server for the next file it sees. Server returns filename
-  // and hash.
-  // 2. Client compares the server's file (by name) to its own.
-  // 3. If server's file is 'before' (lexically) the client's file, client
-  // requests and receives server's file, saving it to disk at the correct
-  // location.
-  // 4. If server's file is 'after' the client's file, client sends all of its
-  // files 'up to' that file to the server.
-  // 5. If the filenames match, filesizes and modification times are used to
-  // check if the files are different.
-  // 6. If the files are different, use the chosen conflict resolution
-  // mechanism to determine which side 'wins'; the client either requests the
-  // file from the server or sends its own file to the server.
-  myFiles := enumerateFiles(root)
+	// Synchronization process:
+	// 1. Client asks server for the next file it sees. Server returns filename
+	// and hash.
+	// 2. Client compares the server's file (by name) to its own.
+	// 3. If server's file is 'before' (lexically) the client's file, client
+	// requests and receives server's file, saving it to disk at the correct
+	// location.
+	// 4. If server's file is 'after' the client's file, client sends all of its
+	// files 'up to' that file to the server.
+	// 5. If the filenames match, filesizes and modification times are used to
+	// check if the files are different.
+	// 6. If the files are different, use the chosen conflict resolution
+	// mechanism to determine which side 'wins'; the client either requests the
+	// file from the server or sends its own file to the server.
+	myFiles := enumerateFiles(root)
 
-  myNext, myAny := <-myFiles
-  svrNext, svrAny := requestNextFileInfo(conn)
-  for myAny || svrAny {
-    if svrAny && (!myAny || svrNext.Path < myNext.Path) {
-      fmt.Println("TODO: Request", svrNext, "from server")
-      svrNext, svrAny = requestNextFileInfo(conn)
-    } else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
-      fmt.Println("TODO: Send", myNext, "to server")
-      myNext, myAny = <-myFiles
-    } else {
-      fmt.Println("TODO: Compare file info for", myNext)
-      myNext, myAny = <-myFiles
-      svrNext, svrAny = requestNextFileInfo(conn)
-    }
-  }
+	myNext, myAny := <-myFiles
+	svrNext, svrAny := requestNextFileInfo(conn)
+	for myAny || svrAny {
+		if svrAny && (!myAny || svrNext.Path < myNext.Path) {
+			requestAndSaveFile(conn, root, svrNext)
+			svrNext, svrAny = requestNextFileInfo(conn)
+		} else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
+			//fmt.Println("TODO: Send", myNext, "to server")
+			myNext, myAny = <-myFiles
+		} else {
+			//fmt.Println("TODO: Compare file info for", myNext)
+			myNext, myAny = <-myFiles
+			svrNext, svrAny = requestNextFileInfo(conn)
+		}
+	}
+}
+
+// Requests the specified file from the server, and saves it to the relevant
+// location on disk.
+func requestAndSaveFile(conn net.Conn, root string, fi FileInfo) {
+	// If this is a folder, just go ahead and create it; no need to ask the
+	// server for anything.
+	if fi.IsDir {
+		fmt.Println("Creating folder", fi.Path)
+		abs := path.Join(root, fi.Path)
+		checkError(os.Mkdir(abs, os.ModeDir | 0777))
+		return
+	}
+
+	fmt.Println("Requesting", fi.Path, "from server.")
+	checkError(send(conn, FileRequest { Path: fi.Path }))
+	yes, err := expectBool(conn)
+	checkError(err)
+
+	if yes {
+	} else {
+		fmt.Fprintln(os.Stderr, "WARNING: Server refused to provide", fi.Path)
+	}
 }
 
 // Asks the server for and receives the next file that it sees.
 func requestNextFileInfo(conn net.Conn) (FileInfo, bool) {
-  checkError(send(conn, CmdRequestNextFileInfo))
-  yes, err := expectBool(conn)
-  checkError(err)
+	checkError(send(conn, CmdRequestNextFileInfo))
+	yes, err := expectBool(conn)
+	checkError(err)
 
-  if yes {
-    fi, err := expectFileInfo(conn)
-    checkError(err)
-    return fi, true
-  } else {
-    return FileInfo{}, false
-  }
+	if yes {
+		fi, err := expectFileInfo(conn)
+		checkError(err)
+		return fi, true
+	} else {
+		return FileInfo{}, false
+	}
 }
