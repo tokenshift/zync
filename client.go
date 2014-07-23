@@ -81,7 +81,7 @@ func requestAndSaveFile(conn net.Conn, root string, fi FileInfo) {
 	if fi.IsDir {
 		fmt.Println("Creating folder", fi.Path)
 		abs := path.Join(root, fi.Path)
-		checkError(os.Mkdir(abs, os.ModeDir | 0777))
+		checkError(os.Mkdir(abs, os.ModeDir | fi.Mode))
 		return
 	}
 
