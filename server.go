@@ -63,6 +63,8 @@ func handleConnection(conn net.Conn, root string) {
 			default:
 				panic(fmt.Errorf("Unrecognized command: %d", msg))
 			}
+		case MsgFileOffer:
+			handleMsgFileOffer(conn, root, msg.(FileOffer))
 		case MsgFileRequest:
 			handleMsgFileRequest(conn, root, msg.(FileRequest))
 		default:
@@ -96,5 +98,23 @@ func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
 		fi, err := fileInfo(root, abs, fStat)
 		checkError(err)
 		checkError(sendFile(conn, fi, abs))
+	}
+}
+
+func handleMsgFileOffer(conn net.Conn, root string, offer FileOffer) {
+	path := path.Join(root, offer.Info.Path)
+
+	if offer.Info.IsDir {
+		// Reject the offer, create the folder directly.
+		logVerbose("Creating folder", offer.Info.Path)
+		checkError(os.Mkdir(path, os.ModeDir | offer.Info.Mode))
+		checkError(send(conn, false))
+	} else {
+		// Accept the offer
+		checkError(send(conn, true))
+
+		// Receive the file
+		logInfo("Receiving", offer.Info.Path, "from client.")
+		checkError(recvFile(conn, offer.Info, path))
 	}
 }

@@ -60,10 +60,10 @@ func runClient(connectUri string) {
 	svrNext, svrAny := requestNextFileInfo(conn)
 	for myAny || svrAny {
 		if svrAny && (!myAny || svrNext.Path < myNext.Path) {
-			checkError(requestAndCreateFile(conn, root, svrNext))
+			requestAndCreateFile(conn, root, svrNext)
 			svrNext, svrAny = requestNextFileInfo(conn)
 		} else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
-			fmt.Println("TODO: Send", myNext, "to server")
+			offerAndSendFile(conn, root, myNext)
 			myNext, myAny = <-myFiles
 		} else {
 			fmt.Println("TODO: Compare file info for", myNext)
@@ -75,7 +75,7 @@ func runClient(connectUri string) {
 
 // Requests the specified file from the server, and saves it to the relevant
 // location on disk.
-func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) (err error) {
+func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) {
 	abs := path.Join(root, fi.Path)
 
 	// If this is a folder, just go ahead and create it; no need to ask the
@@ -83,7 +83,7 @@ func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) (err error) {
 	if fi.IsDir {
 		logVerbose("Creating folder", fi.Path)
 		checkError(os.Mkdir(abs, os.ModeDir | fi.Mode))
-		return nil
+		return
 	}
 
 	logInfo("Requesting", fi.Path, "from server.")
@@ -93,12 +93,27 @@ func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) (err error) {
 
 	if yes {
 		logVerbose("Receiving", fi.Path, "from server.")
-		err = recvFile(conn, fi, abs)
+		checkError(recvFile(conn, fi, abs))
 	} else {
 		logWarning("Server refused to provide", fi.Path)
 	}
+}
 
-	return
+// Offers a file to the server and sends it if the server accepts.
+func offerAndSendFile(conn net.Conn, root string, fi FileInfo) {
+	logVerbose("Offering", fi.Path, "to server.")
+	checkError(send(conn, FileOffer { Info: fi }))
+
+	yes, err := expectBool(conn)
+	checkError(err)
+
+	if yes {
+		logInfo("Sending", fi.Path, "to server.")
+		path := path.Join(root, fi.Path)
+		checkError(sendFile(conn, fi, path))
+	} else {
+		logVerbose("Server refused to accept", fi.Path)
+	}
 }
 
 // Asks the server for and receives the next file that it sees.

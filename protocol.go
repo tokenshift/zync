@@ -29,9 +29,11 @@ const (
 	MsgCommand
 	MsgFile
 	MsgFileInfo
+	MsgFileOffer
 	MsgFileRequest
 	MsgInt32
 	MsgInt64
+	MsgOfferFile
 	MsgString
 	MsgTime
 	MsgUint32
@@ -43,9 +45,11 @@ var MessageTypeNames = map[MessageType]string {
 	MsgCommand: "MsgCommand",
 	MsgFile: "MsgFile",
 	MsgFileInfo: "MsgFileInfo",
+	MsgFileOffer: "MsgFileOffer",
 	MsgFileRequest: "MsgFileRequest",
 	MsgInt32: "MsgInt32",
 	MsgInt64: "MsgInt64",
+	MsgOfferFile: "MsgOfferFile",
 	MsgString: "MsgString",
 	MsgTime: "MsgTime",
 	MsgUint32: "MsgUint32",
@@ -70,6 +74,10 @@ type FileRequest struct {
 	Path string
 }
 
+type FileOffer struct {
+	Info FileInfo
+}
+
 // Writes a message to the connection.
 func send(conn io.Writer, msg Message) (err error) {
 	switch msg := msg.(type) {
@@ -81,6 +89,8 @@ func send(conn io.Writer, msg Message) (err error) {
 		err = sendCommand(conn, msg)
 	case FileInfo:
 		err = sendFileInfo(conn, msg)
+	case FileOffer:
+		err = sendFileOffer(conn, msg)
 	case FileRequest:
 		err = sendFileRequest(conn, msg)
 	case int32:
@@ -134,6 +144,8 @@ func read(conn io.Reader, msgType MessageType) (msg Message, err error) {
 		msg, err = recvCommand(conn)
 	case MsgFileInfo:
 		msg, err = recvFileInfo(conn)
+	case MsgFileOffer:
+		msg, err = recvFileOffer(conn)
 	case MsgFileRequest:
 		msg, err = recvFileRequest(conn)
 	case MsgInt32:
@@ -299,23 +311,23 @@ func sendFile(conn io.Writer, fi FileInfo, path string) (err error) {
 	return
 }
 
-func recvFile(conn io.Reader, fi FileInfo, path string) (err error) {
+func recvFile(conn io.Reader, expected FileInfo, targetPath string) (err error) {
 	err = expectMessageType(conn, MsgFile)
 	if err != nil {
 		return
 	}
 
-	fi2, err := expectFileInfo(conn)
+	fi, err := expectFileInfo(conn)
 	if err != nil {
 		return
 	}
 
-	if fi2.Path != fi.Path {
-		return fmt.Errorf("Requested %v, server sent %v.", fi.Path, fi2.Path)
+	if fi.Path != expected.Path {
+		return fmt.Errorf("Requested %v, server sent %v.", expected.Path, fi.Path)
 	}
 
-	if fi2.Size > MaxFileSize {
-		return fmt.Errorf("File too large: %d bytes", fi2.Size)
+	if fi.Size > MaxFileSize {
+		return fmt.Errorf("File too large: %d bytes", fi.Size)
 	}
 
 	// File is saved to a temp file until fully received.
@@ -324,12 +336,12 @@ func recvFile(conn io.Reader, fi FileInfo, path string) (err error) {
 		return
 	}
 
-	written, err := io.CopyN(temp, conn, fi2.Size)
+	written, err := io.CopyN(temp, conn, fi.Size)
 	if err != nil {
 		return
 	}
-	if written != fi2.Size {
-		return fmt.Errorf("Failed to receive full contents of %s (%d bytes)", fi.Path, fi2.Size)
+	if written != fi.Size {
+		return fmt.Errorf("Failed to receive full contents of %s (%d bytes)", expected.Path, fi.Size)
 	}
 
 	err = checkMessageTerminator(conn)
@@ -338,7 +350,7 @@ func recvFile(conn io.Reader, fi FileInfo, path string) (err error) {
 	}
 
 	// Move the temp file to the specified location.
-	err = os.Rename(temp.Name(), path)
+	err = os.Rename(temp.Name(), targetPath)
 
 	return
 }
@@ -418,6 +430,26 @@ func expectFileInfo(conn io.Reader) (fi FileInfo, err error) {
 		err = fmt.Errorf("Expected FileInfo, got %T: %v", msg, msg)
 	}
 
+	return
+}
+
+func sendFileOffer(conn io.Writer, offer FileOffer) (err error) {
+	err = writeMessageType(conn, MsgFileOffer)
+	if err != nil {
+		return
+	}
+
+	err = send(conn, offer.Info)
+	return
+}
+
+func recvFileOffer(conn io.Reader) (offer FileOffer, err error) {
+	info, err := expectFileInfo(conn)
+	if err != nil {
+		return
+	}
+
+	offer.Info = info
 	return
 }
 
