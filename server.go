@@ -89,29 +89,12 @@ func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
 	if fStat, err := os.Stat(abs); os.IsNotExist(err) {
 		fmt.Fprintln(os.Stderr, "WARNING: Client requested nonexistant file", req.Path)
 		checkError(send(conn, false))
-		return
-	} else if file, err := os.Open(abs); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		checkError(send(conn, false))
-		return
 	} else {
 		fmt.Println("Sending", req.Path, "to client.")
 		checkError(send(conn, true))
 
-		// Sending a file follows the same structure as other messages (type, data,
-		// terminator), but is handled separately to avoid a recipient
-		// 'accidentally' receiving a potentially very large message that they were
-		// not expecting.
-		checkError(writeMessageType(conn, MsgFile))
-		checkError(send(conn, req.Path))
-		checkError(send(conn, fStat.Size()))
-
-		sent, err := io.Copy(conn, file)
+		fi, err := fileInfo(root, abs, fStat)
 		checkError(err)
-		if sent != fStat.Size() {
-			panic(fmt.Errorf("Failed to send full contents of %s (%d bytes)", req.Path, fStat.Size()))
-		}
-
-		checkError(writeInt32(conn, MessageTerminator))
+		checkError(sendFile(conn, fi, abs))
 	}
 }

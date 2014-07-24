@@ -3,6 +3,7 @@ package main
 import "encoding/binary"
 import "fmt"
 import "io"
+import "io/ioutil"
 import "os"
 import "time"
 
@@ -97,7 +98,7 @@ func send(conn io.Writer, msg Message) (err error) {
 	}
 
 	if err == nil {
-		err = writeInt32(conn, MessageTerminator)
+		err = writeMessageTerminator(conn)
 	}
 
 	return
@@ -122,7 +123,11 @@ func recv(conn io.Reader) (msg Message, msgType MessageType, err error) {
 func read(conn io.Reader, msgType MessageType) (msg Message, err error) {
 	switch msgType {
 	default:
-		err = fmt.Errorf("Unexpected message type: %d", msgType)
+		if name, ok := MessageTypeNames[msgType]; ok {
+			err = fmt.Errorf("Unexpected message type: %s", name)
+		} else {
+			err = fmt.Errorf("Unexpected message type: %d", msgType)
+		}
 	case MsgBool:
 		msg, err = recvBool(conn)
 	case MsgCommand:
@@ -262,6 +267,78 @@ func expectCommand(conn io.Reader) (cmd Command, err error) {
 	if cmd, ok = msg.(Command); !ok {
 		err = fmt.Errorf("Expected Command, got %T: %v", msg, msg)
 	}
+
+	return
+}
+
+func sendFile(conn io.Writer, fi FileInfo, path string) (err error) {
+	err = writeMessageType(conn, MsgFile)
+	if err != nil {
+		return
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+
+	err = send(conn, fi)
+	if err != nil {
+		return
+	}
+
+	n, err := io.Copy(conn, file)
+	if err != nil {
+		return
+	}
+	if n != fi.Size {
+		return fmt.Errorf("Only %d of %d bytes were sent for %s", n, fi.Size, fi.Path)
+	}
+
+	err = writeMessageTerminator(conn)
+	return
+}
+
+func recvFile(conn io.Reader, fi FileInfo, path string) (err error) {
+	err = expectMessageType(conn, MsgFile)
+	if err != nil {
+		return
+	}
+
+	fi2, err := expectFileInfo(conn)
+	if err != nil {
+		return
+	}
+
+	if fi2.Path != fi.Path {
+		return fmt.Errorf("Requested %v, server sent %v.", fi.Path, fi2.Path)
+	}
+
+	if fi2.Size > MaxFileSize {
+		return fmt.Errorf("File too large: %d bytes", fi2.Size)
+	}
+
+	// File is saved to a temp file until fully received.
+	temp, err := ioutil.TempFile("", "zync")
+	if err != nil {
+		return
+	}
+
+	written, err := io.CopyN(temp, conn, fi2.Size)
+	if err != nil {
+		return
+	}
+	if written != fi2.Size {
+		return fmt.Errorf("Failed to receive full contents of %s (%d bytes)", fi.Path, fi2.Size)
+	}
+
+	err = checkMessageTerminator(conn)
+	if err != nil {
+		return
+	}
+
+	// Move the temp file to the specified location.
+	err = os.Rename(temp.Name(), path)
 
 	return
 }
@@ -414,10 +491,27 @@ func writeInt64(conn io.Writer, val int64) error {
 	return binary.Write(conn, binary.BigEndian, val)
 }
 
+func writeMessageTerminator(conn io.Writer) error {
+	return writeInt32(conn, MessageTerminator)
+}
+
 func recvMessageType(conn io.Reader) (mt MessageType, err error) {
 	var msgType uint32
 	err = binary.Read(conn, binary.BigEndian, &msgType)
 	return MessageType(msgType), err
+}
+
+func expectMessageType(conn io.Reader, mt MessageType) (err error) {
+	msgType, err := recvMessageType(conn)
+	if err != nil {
+		return
+	}
+
+	if msgType != mt {
+		return fmt.Errorf("Expected message type %d, got %d.", mt, msgType)
+	}
+
+	return nil
 }
 
 func writeMessageType(conn io.Writer, mt MessageType) (err error) {

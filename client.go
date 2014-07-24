@@ -1,7 +1,6 @@
 package main
 
 import "fmt"
-import "io"
 import "net"
 import "os"
 import "path"
@@ -61,7 +60,7 @@ func runClient(connectUri string) {
 	svrNext, svrAny := requestNextFileInfo(conn)
 	for myAny || svrAny {
 		if svrAny && (!myAny || svrNext.Path < myNext.Path) {
-			requestAndCreateFile(conn, root, svrNext)
+			checkError(requestAndCreateFile(conn, root, svrNext))
 			svrNext, svrAny = requestNextFileInfo(conn)
 		} else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
 			fmt.Println("TODO: Send", myNext, "to server")
@@ -76,7 +75,7 @@ func runClient(connectUri string) {
 
 // Requests the specified file from the server, and saves it to the relevant
 // location on disk.
-func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) {
+func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) (err error) {
 	abs := path.Join(root, fi.Path)
 
 	// If this is a folder, just go ahead and create it; no need to ask the
@@ -84,7 +83,7 @@ func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) {
 	if fi.IsDir {
 		fmt.Println("Creating folder", fi.Path)
 		checkError(os.Mkdir(abs, os.ModeDir | fi.Mode))
-		return
+		return nil
 	}
 
 	fmt.Println("Requesting", fi.Path, "from server.")
@@ -93,38 +92,13 @@ func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) {
 	checkError(err)
 
 	if yes {
-		msgType, err := recvMessageType(conn)
-		checkError(err)
-		if msgType != MsgFile {
-			panic(fmt.Errorf("Expected MsgFile (%v), got %v", MsgFile, msgType))
-		}
-
-		path, err := expectString(conn)
-		checkError(err)
-		if path != fi.Path {
-			panic(fmt.Errorf("Requested %v, server provided %v", fi.Path, path))
-		}
-
-		size, err := expectInt64(conn)
-		checkError(err)
-		if size > MaxFileSize {
-			panic(fmt.Errorf("File too large: %d bytes", size))
-		}
-
-		file, err := os.Create(abs)
-		checkError(err)
-
-		written, err := io.CopyN(file, conn, size)
-		checkError(err)
-
-		if written != size {
-			panic(fmt.Errorf("Failed to receive full contents of %s (%d bytes)", fi.Path, size))
-		}
-
-		checkError(checkMessageTerminator(conn))
+		fmt.Println("Receiving", fi.Path, "from server.")
+		err = recvFile(conn, fi, abs)
 	} else {
 		fmt.Fprintln(os.Stderr, "WARNING: Server refused to provide", fi.Path)
 	}
+
+	return
 }
 
 // Asks the server for and receives the next file that it sees.
