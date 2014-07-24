@@ -83,14 +83,14 @@ func handleCmdRequestNextFileInfo(conn net.Conn, files <-chan FileInfo) {
 
 var fileBuffer = make([]byte, 1024 * 1024)
 func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
-	fmt.Println("Client requested", req.Path)
+	logVerbose("Client requested", req.Path)
 
 	abs := path.Join(root, req.Path)
 	if fStat, err := os.Stat(abs); os.IsNotExist(err) {
-		fmt.Fprintln(os.Stderr, "WARNING: Client requested nonexistant file", req.Path)
+		logWarning("Client requested nonexistant file", req.Path)
 		checkError(send(conn, false))
 	} else {
-		fmt.Println("Sending", req.Path, "to client.")
+		logInfo("Sending", req.Path, "to client.")
 		checkError(send(conn, true))
 
 		fi, err := fileInfo(root, abs, fStat)

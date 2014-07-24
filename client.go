@@ -24,10 +24,10 @@ func runClient(connectUri string) {
 		connectUri = fmt.Sprintf("%s:%d", connectUri, port)
 	}
 
-	fmt.Println("Starting Zync client.")
-	fmt.Printf("Working directory is %v.\n", root)
+	logInfo("Starting Zync client.")
+	logInfo("Working directory is", root)
 
-	fmt.Printf("Connecting to Zync server at %s...\n", connectUri)
+	logInfo("Connecting to Zync server at", connectUri)
 	conn, err := net.Dial("tcp", connectUri)
 	checkError(err)
 
@@ -36,7 +36,7 @@ func runClient(connectUri string) {
 	accepted, err := expectBool(conn)
 	checkError(err)
 	if !accepted {
-		fmt.Fprintln(os.Stderr, "Server rejected protocol version", ProtoVersion)
+		logError("Server rejected protocol version", ProtoVersion)
 		os.Exit(1)
 	}
 
@@ -81,21 +81,21 @@ func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) (err error) {
 	// If this is a folder, just go ahead and create it; no need to ask the
 	// server for anything.
 	if fi.IsDir {
-		fmt.Println("Creating folder", fi.Path)
+		logVerbose("Creating folder", fi.Path)
 		checkError(os.Mkdir(abs, os.ModeDir | fi.Mode))
 		return nil
 	}
 
-	fmt.Println("Requesting", fi.Path, "from server.")
+	logInfo("Requesting", fi.Path, "from server.")
 	checkError(send(conn, FileRequest { Path: fi.Path }))
 	yes, err := expectBool(conn)
 	checkError(err)
 
 	if yes {
-		fmt.Println("Receiving", fi.Path, "from server.")
+		logVerbose("Receiving", fi.Path, "from server.")
 		err = recvFile(conn, fi, abs)
 	} else {
-		fmt.Fprintln(os.Stderr, "WARNING: Server refused to provide", fi.Path)
+		logWarning("Server refused to provide", fi.Path)
 	}
 
 	return
