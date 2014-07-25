@@ -60,7 +60,7 @@ func runClient(connectUri string) {
 	svrNext, svrAny := requestNextFileInfo(conn)
 	for myAny || svrAny {
 		if svrAny && (!myAny || svrNext.Path < myNext.Path) {
-			requestAndCreateFile(conn, root, svrNext)
+			requestAndSaveFile(conn, root, svrNext, false)
 			svrNext, svrAny = requestNextFileInfo(conn)
 		} else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
 			offerAndSendFile(conn, root, myNext)
@@ -71,6 +71,8 @@ func runClient(connectUri string) {
 			svrNext, svrAny = requestNextFileInfo(conn)
 		}
 	}
+
+	logInfo("Complete, disconnecting.")
 }
 
 func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
@@ -92,9 +94,11 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 	if keepWhose == "mine" || (keepWhose == "" && mine.ModTime.After(theirs.ModTime)) {
 		// Use the client's version.
 		logVerbose("Sending", mine.Path, "to server.")
+		offerAndSendFile(conn, root, mine)
 	} else if keepWhose == "theirs" || (keepWhose == "" && theirs.ModTime.After(mine.ModTime)) {
 		// Use the server's version.
 		logVerbose("Requesting", theirs.Path, "from server.")
+		requestAndSaveFile(conn, root, theirs, true)
 	} else {
 		// Could not automatically resolve.
 		logWarning("Failed to resolve", mine.Path, "automatically; mod times match.")
@@ -103,7 +107,7 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 
 // Requests the specified file from the server, and saves it to the relevant
 // location on disk.
-func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) {
+func requestAndSaveFile(conn net.Conn, root string, fi FileInfo, overwrite bool) {
 	abs := path.Join(root, fi.Path)
 
 	// If this is a folder, just go ahead and create it; no need to ask the
@@ -121,7 +125,7 @@ func requestAndCreateFile(conn net.Conn, root string, fi FileInfo) {
 
 	if yes {
 		logVerbose("Receiving", fi.Path, "from server.")
-		checkError(recvFile(conn, fi, abs))
+		checkError(recvFile(conn, fi, abs, overwrite))
 	} else {
 		logWarning("Server refused to provide", fi.Path)
 	}

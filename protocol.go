@@ -311,7 +311,14 @@ func sendFile(conn io.Writer, fi FileInfo, path string) (err error) {
 	return
 }
 
-func recvFile(conn io.Reader, expected FileInfo, targetPath string) (err error) {
+func recvFile(conn io.Reader, expected FileInfo, targetPath string, overwrite bool) (err error) {
+	if !overwrite {
+		if _, err = os.Stat(targetPath); !os.IsNotExist(err) {
+			err = fmt.Errorf("Refusing to overwrite %s.", targetPath)
+			return
+		}
+	}
+
 	err = expectMessageType(conn, MsgFile)
 	if err != nil {
 		return

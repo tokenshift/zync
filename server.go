@@ -104,6 +104,9 @@ func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
 func handleMsgFileOffer(conn net.Conn, root string, offer FileOffer) {
 	path := path.Join(root, offer.Info.Path)
 
+	// TODO: Decide more intelligently whether to overwrite server's own file.
+	overwrite := true
+
 	if offer.Info.IsDir {
 		// Reject the offer, create the folder directly.
 		logVerbose("Creating folder", offer.Info.Path)
@@ -115,6 +118,6 @@ func handleMsgFileOffer(conn net.Conn, root string, offer FileOffer) {
 
 		// Receive the file
 		logInfo("Receiving", offer.Info.Path, "from client.")
-		checkError(recvFile(conn, offer.Info, path))
+		checkError(recvFile(conn, offer.Info, path, overwrite))
 	}
 }
