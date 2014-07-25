@@ -89,7 +89,6 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 		return
 	}
 
-
 	if keepWhose == "mine" || (keepWhose == "" && mine.ModTime.After(theirs.ModTime)) {
 		// Use the client's version.
 		logVerbose("Sending", mine.Path, "to server.")

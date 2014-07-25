@@ -351,7 +351,12 @@ func recvFile(conn io.Reader, expected FileInfo, targetPath string) (err error) 
 
 	// Move the temp file to the specified location.
 	err = os.Rename(temp.Name(), targetPath)
+	if err != nil {
+		return
+	}
 
+	// Update the modtime of the file to match the provider's.
+	err = os.Chtimes(targetPath, fi.ModTime, fi.ModTime)
 	return
 }
 
