@@ -58,3 +58,9 @@ func checkError(err error) {
 		panic(err)
 	}
 }
+
+func assert(b bool, msg string) {
+	if !b {
+		panic(fmt.Errorf(msg))
+	}
+}

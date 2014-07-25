@@ -66,10 +66,39 @@ func runClient(connectUri string) {
 			offerAndSendFile(conn, root, myNext)
 			myNext, myAny = <-myFiles
 		} else {
-			fmt.Println("TODO: Compare file info for", myNext)
+			resolve(conn, root, myNext, svrNext)
 			myNext, myAny = <-myFiles
 			svrNext, svrAny = requestNextFileInfo(conn)
 		}
+	}
+}
+
+func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
+	assert(mine.Path == theirs.Path, "Cannot resolve differing paths.")
+
+	if mine.IsDir || theirs.IsDir {
+		if mine.IsDir != theirs.IsDir {
+			logError("Tree conflict at", mine.Path)
+		}
+		return
+	}
+
+	logVerbose("Comparing", mine.Path)
+	if mine.Size == theirs.Size && mine.ModTime == theirs.ModTime {
+		logVerbose("Files match, skipping.")
+		return
+	}
+
+
+	if keepWhose == "mine" || (keepWhose == "" && mine.ModTime.After(theirs.ModTime)) {
+		// Use the client's version.
+		logVerbose("Sending", mine.Path, "to server.")
+	} else if keepWhose == "theirs" || (keepWhose == "" && theirs.ModTime.After(mine.ModTime)) {
+		// Use the server's version.
+		logVerbose("Requesting", theirs.Path, "from server.")
+	} else {
+		// Could not automatically resolve.
+		logWarning("Failed to resolve", mine.Path, "automatically; mod times match.")
 	}
 }
 
