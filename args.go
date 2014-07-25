@@ -29,7 +29,8 @@ func argOption(args []string, names ...string) (bool, string, []string) {
 		for _, name := range(names) {
 			if arg == name {
 				if len(args) > i + 1 {
-					return true, args[i+1], append(args[:i], args[i+2:]...)
+					val := args[i+1]
+					return true, val, append(args[:i], args[i+2:]...)
 				} else {
 					return true, "", append(args[:i], args[i+1:]...)
 				}
