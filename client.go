@@ -86,7 +86,7 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 	}
 
 	logVerbose("Comparing", mine.Path)
-	if mine.Size == theirs.Size && mine.ModTime == theirs.ModTime {
+	if mine.Size == theirs.Size && mine.ModTime.Equal(theirs.ModTime) {
 		logVerbose("Files match, skipping.")
 		return
 	}

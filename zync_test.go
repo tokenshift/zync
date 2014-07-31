@@ -6,6 +6,7 @@ import "os"
 import "os/exec"
 import "path"
 import "testing"
+import "time"
 
 var zyncDir, _ = os.Getwd()
 
@@ -18,9 +19,18 @@ func createTempDir() string {
 	return name
 }
 
-// Creates a test file in the specified directory.
-func createTestFile(dir string, content string) (fname string) {
-	f, err := ioutil.TempFile(dir, "zync")
+// Creates a test file in the specified directory. If name is the empty string,
+// generates a unique temp file name.
+func createTestFile(dir string, name string, content string) (fname string) {
+	var f *os.File
+	var err error
+
+	if name == "" {
+		f, err = ioutil.TempFile(dir, "zync")
+	} else {
+		f, err = os.Create(path.Join(dir, name))
+	}
+
 	if err != nil {
 		panic(err)
 	}
@@ -117,10 +127,55 @@ func TestSendingFileToServer(t *testing.T) {
 	defer close(svr)
 
 	withTempDir(func(dir string) {
-		fname := createTestFile(dir, "TestSendingFile")
+		fname := createTestFile(dir, "", "TestSendingFileToServer")
 		zyncExec(dir, "-c", "localhost")
-		fmt.Println(svrFolder)
 
-		expectContent(t, svrFolder, fname, "TestSendingFile")
+		expectContent(t, svrFolder, fname, "TestSendingFileToServer")
+	})
+}
+
+func TestReceivingFileFromServer(t *testing.T) {
+	svrFolder, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	fname := createTestFile(svrFolder, "", "TestReceivingFileFromServer")
+
+	withTempDir(func(dir string) {
+		zyncExec(dir, "-c", "localhost")
+		expectContent(t, dir, fname, "TestReceivingFileFromServer")
+	})
+}
+
+func TestSendingNewerFileToServer(t *testing.T) {
+	svrDir, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	withTempDir(func(dir string) {
+		fname := createTestFile(dir, "", "TestSendingNewerFileToServer1")
+		createTestFile(svrDir, fname, "TestSendingNewerFileToServer2")
+
+		future := time.Now().Add(5 * time.Minute)
+		os.Chtimes(path.Join(dir, fname), future, future)
+
+		zyncExec(dir, "-c", "localhost", "-v")
+		expectContent(t, svrDir, fname, "TestSendingNewerFileToServer1")
+		expectContent(t, dir, fname, "TestSendingNewerFileToServer1")
+	})
+}
+
+func TestReceivingNewerFileFromServer(t *testing.T) {
+	svrDir, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	withTempDir(func(dir string) {
+		fname := createTestFile(dir, "", "TestReceivingNewerFileFromServer1")
+		createTestFile(svrDir, fname, "TestReceivingNewerFileFromServer2")
+
+		future := time.Now().Add(5 * time.Minute)
+		os.Chtimes(path.Join(svrDir, fname), future, future)
+
+		zyncExec(dir, "-c", "localhost", "-v")
+		expectContent(t, svrDir, fname, "TestReceivingNewerFileFromServer2")
+		expectContent(t, dir, fname, "TestReceivingNewerFileFromServer2")
 	})
 }
