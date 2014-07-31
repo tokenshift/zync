@@ -5,10 +5,12 @@ var hash = false
 var interactive = false
 var verbose = false
 
-// Daemon Options
+// Server Options
 var port = 20741
+var restrict = false
+var restrictAll = false
 
-// Local Options
+// Client Options
 var keepWhose = ""
 var autoDelete = false
 var reverse = false

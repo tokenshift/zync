@@ -20,14 +20,27 @@ they will not be changed on either node.
 **`--server, -s`** 
 Runs the node in server mode. Non-interactive only.
 
-**`--port {number}, -p {number}`** 
-For daemon mode only; serves at the specified port. By default, the port 20741
-is used.
-
 **`--connect {remote}, -c {remote}`** 
-Connects to the remote node, specified as a URI. Supported schemes include
-`zync://`, which connects to a Zync daemon, and `file://`, which operates
-on the local (or network attached) file system.
+Connects to the specified server.
+
+**`--verbose, -v`** 
+Enables verbose logging. All file events will be output, even when no changes
+were made.
+
+### Server Options
+
+**`--port {number}, -p {number}`** 
+Server will listen at the specified port. By default, the port 20741 is used.
+
+**`--restrict, -r`**
+The server will refuse to delete any of its own files, even if the client is
+run with `-k mine --delete`. 
+
+**`--Restrict, -R`**
+The server will refuse to delete any of its own files OR overwrite them with
+the client's version, even if the client is run with `-k mine --delete`.
+
+### Client Options
 
 **`--keep {mine|theirs}, -k {mine|theirs}`** 
 If a conflict occurs, keep 'mine' (the local node) or 'theirs' (the remote
@@ -39,15 +52,6 @@ Options are `m` (mine), `t` (theirs), or `s` (skip).
 
 **`--delete`** 
 Deletes all files on the remote node that no longer exist on the local node.
-
-**`--reverse, -r`** 
-Reverses the roles of the nodes, making the local (`zync -c`) node act as the
-remote node and vice versa for all file resolution purposes. Any command output
-and interactive prompts will still occur at the local node.
-
-**`--verbose, -v`** 
-Enables verbose logging. All file events will be output, even when no changes
-were made.
 
 **`--hash, -h`** 
 Computes a checksum of potentially conflicting files rather than relying on the

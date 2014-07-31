@@ -18,7 +18,6 @@ func main() {
 
 	// Global options.
 	hash, args = argFlag(args, "hash", "h")
-	interactive, args = argFlag(args, "interactive", "i")
 	verbose, args = argFlag(args, "verbose", "v")
 
 	if server {
@@ -33,6 +32,9 @@ func main() {
 			port = int(portNum)
 		}
 
+		restrict, args = argFlag(args, "restrict", "r")
+		restrictAll, args = argFlag(args, "Restrict", "R")
+
 		runServer()
 	} else if client {
 		// Client mode.
@@ -40,6 +42,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, "--connect (-c) requires a URI.")
 			os.Exit(1)
 		}
+
+		interactive, args = argFlag(args, "interactive", "i")
 
 		_, keepWhose, args = argOption(args, "keep", "k")
 		if keepWhose != "" && keepWhose != "theirs" && keepWhose != "mine" {

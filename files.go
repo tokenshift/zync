@@ -16,7 +16,11 @@ func enumerateFiles(root string) (<-chan FileInfo) {
 
 		filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "WARNING:", err)
+				// The containing folder may have been deleted already; skip
+				// this. Log a warning for any other error.
+				if !os.IsNotExist(err) {
+					fmt.Fprintln(os.Stderr, "WARNING:", err)
+				}
 				return nil
 			} else {
 				fi, err := fileInfo(root, path, info)

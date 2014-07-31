@@ -91,13 +91,19 @@ func handleCmdRequestNextFileInfo(conn net.Conn, files <-chan FileInfo) {
 func handleMsgFileDeletionRequest(conn net.Conn, root string, req FileDeletionRequest) {
 	logVerbose("Client requested deletion of", req.Path)
 
-	// Only honor the deletion if this was the last file the server informed
-	// the client of. Otherwise, the client could be trying something sneaky...
-	if lastSentFilePath == req.Path {
+	if restrict || restrictAll {
+		// Server was run with the --restrict (-r) or --Restrict (-R) option;
+		// refuse to delete any file.
+		checkError(send(conn, false))
+	} else if lastSentFilePath != req.Path {
+		// Refuse to delete the file if it isn't the last file that the server
+		// informed the client of. Otherwise, the client could be trying
+		// something sneaky...
+		checkError(send(conn, false))
+	} else {
+		// Delete the local file.
 		checkError(send(conn, true))
 		deleteLocalFile(root, req.Path)
-	} else {
-		checkError(send(conn, false))
 	}
 }
 
@@ -122,20 +128,22 @@ func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
 func handleMsgFileOffer(conn net.Conn, root string, offer FileOffer) {
 	path := path.Join(root, offer.Info.Path)
 
-	// TODO: Decide more intelligently whether to overwrite server's own file.
-	overwrite := true
-
-	if offer.Info.IsDir {
+	_, err := os.Stat(path)
+	if restrictAll && !os.IsNotExist(err) {
+		// Refuse the offer; server was run in --Restrict (-R) mode.
+		logVerbose("Rejecting client's", offer.Info.Path)
+		checkError(send(conn, false))
+	} else if offer.Info.IsDir {
 		// Reject the offer, create the folder directly.
 		logVerbose("Creating folder", offer.Info.Path)
 		checkError(os.Mkdir(path, os.ModeDir | offer.Info.Mode))
 		checkError(send(conn, false))
 	} else {
-		// Accept the offer
+		// Accept the offer.
 		checkError(send(conn, true))
 
-		// Receive the file
+		// Receive the file.
 		logInfo("Receiving", offer.Info.Path, "from client.")
-		checkError(recvFile(conn, offer.Info, path, overwrite))
+		checkError(recvFile(conn, offer.Info, path, true))
 	}
 }
