@@ -122,6 +122,7 @@ func expectContent(t *testing.T, dir, fname, content string) {
 	}
 }
 
+// The client should send any files the server is missing to it.
 func TestSendingFileToServer(t *testing.T) {
 	svrFolder, svr := zyncExecAsync("-s")
 	defer close(svr)
@@ -134,6 +135,7 @@ func TestSendingFileToServer(t *testing.T) {
 	})
 }
 
+// The client should request any files it is missing from the server.
 func TestReceivingFileFromServer(t *testing.T) {
 	svrFolder, svr := zyncExecAsync("-s")
 	defer close(svr)
@@ -146,6 +148,7 @@ func TestReceivingFileFromServer(t *testing.T) {
 	})
 }
 
+// By default, the newer file is kept.
 func TestSendingNewerFileToServer(t *testing.T) {
 	svrDir, svr := zyncExecAsync("-s")
 	defer close(svr)
@@ -163,6 +166,7 @@ func TestSendingNewerFileToServer(t *testing.T) {
 	})
 }
 
+// By default, the newer file is kept.
 func TestReceivingNewerFileFromServer(t *testing.T) {
 	svrDir, svr := zyncExecAsync("-s")
 	defer close(svr)
@@ -177,5 +181,43 @@ func TestReceivingNewerFileFromServer(t *testing.T) {
 		zyncExec(dir, "-c", "localhost", "-v")
 		expectContent(t, svrDir, fname, "TestReceivingNewerFileFromServer2")
 		expectContent(t, dir, fname, "TestReceivingNewerFileFromServer2")
+	})
+}
+
+// If "--keep mine" is specified, the client's file should be used even when
+// it is older.
+func TestSendingOlderFileToServer(t *testing.T) {
+	svrDir, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	withTempDir(func(dir string) {
+		fname := createTestFile(dir, "", "TestSendingOlderFileToServer1")
+		createTestFile(svrDir, fname, "TestSendingOlderFileToServer2")
+
+		future := time.Now().Add(5 * time.Minute)
+		os.Chtimes(path.Join(svrDir, fname), future, future)
+
+		zyncExec(dir, "-c", "localhost", "-v", "-k", "mine")
+		expectContent(t, svrDir, fname, "TestSendingOlderFileToServer1")
+		expectContent(t, dir, fname, "TestSendingOlderFileToServer1")
+	})
+}
+
+// If "--keep theirs" is specified, the server's file should be used even when
+// it is older.
+func TestReceivingOlderFileFromServer(t *testing.T) {
+	svrDir, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	withTempDir(func(dir string) {
+		fname := createTestFile(dir, "", "TestReceivingOlderFileFromServer1")
+		createTestFile(svrDir, fname, "TestReceivingOlderFileFromServer2")
+
+		future := time.Now().Add(5 * time.Minute)
+		os.Chtimes(path.Join(dir, fname), future, future)
+
+		zyncExec(dir, "-c", "localhost", "-v", "-k", "theirs")
+		expectContent(t, svrDir, fname, "TestReceivingOlderFileFromServer2")
+		expectContent(t, dir, fname, "TestReceivingOlderFileFromServer2")
 	})
 }
