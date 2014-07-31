@@ -1,0 +1,126 @@
+package main
+
+import "fmt"
+import "io/ioutil"
+import "os"
+import "os/exec"
+import "path"
+import "testing"
+
+var zyncDir, _ = os.Getwd()
+
+func createTempDir() string {
+	name, err := ioutil.TempDir("", "zync")
+	if err != nil {
+		panic(err)
+	}
+
+	return name
+}
+
+// Creates a test file in the specified directory.
+func createTestFile(dir string, content string) (fname string) {
+	f, err := ioutil.TempFile(dir, "zync")
+	if err != nil {
+		panic(err)
+	}
+
+	defer f.Close()
+
+	fmt.Fprint(f, content)
+
+	return path.Base(f.Name())
+}
+
+// Executes zync with the specified arguments in a new temporary directory.
+// Returns the temp folder and a channel that can be closed to kill the process
+// and clean up the temp folder.
+func zyncExecAsync(args ...string) (dir string, sig chan bool) {
+	dir = createTempDir()
+
+	zync := path.Join(zyncDir, "zync")
+	cmd := exec.Command(zync, args...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	sig = make(chan bool)
+	go func() {
+		for _ = range(sig) {}
+
+		err = cmd.Process.Kill()
+		if err != nil {
+			panic(err)
+		}
+
+		err := os.RemoveAll(dir)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	return
+}
+
+// Executes zync with the specified arguments in the specified directory.
+func zyncExec(dir string, args ...string) {
+	zync := path.Join(zyncDir, "zync")
+	cmd := exec.Command(zync, args...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		panic(err)
+	}
+}
+
+// Creates a temp directory, yields it to the passed function, and then cleans
+// it up.
+func withTempDir(do func(dir string)) {
+	dir := createTempDir()
+
+	defer os.RemoveAll(dir)
+
+	do(dir)
+}
+
+// Checks that specified file exists in the specified folder with the specified
+// content.
+func expectContent(t *testing.T, dir, fname, content string) {
+	fmt.Println("Looking for", fname, "in", dir)
+	f, err := os.Open(path.Join(dir, fname))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	data, err := ioutil.ReadAll(f)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if string(data) != content {
+		t.Errorf("Expected %s, read %s.", content, string(data))
+	}
+}
+
+func TestSendingFileToServer(t *testing.T) {
+	svrFolder, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	withTempDir(func(dir string) {
+		fname := createTestFile(dir, "TestSendingFile")
+		zyncExec(dir, "-c", "localhost")
+		fmt.Println(svrFolder)
+
+		expectContent(t, svrFolder, fname, "TestSendingFile")
+	})
+}
