@@ -60,10 +60,18 @@ func runClient(connectUri string) {
 	svrNext, svrAny := requestNextFileInfo(conn)
 	for myAny || svrAny {
 		if svrAny && (!myAny || svrNext.Path < myNext.Path) {
-			requestAndSaveFile(conn, root, svrNext, false)
+			if keepWhose == "mine" && autoDelete {
+				requestFileDeletion(conn, svrNext.Path)
+			} else {
+				requestAndSaveFile(conn, root, svrNext, false)
+			}
 			svrNext, svrAny = requestNextFileInfo(conn)
 		} else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
-			offerAndSendFile(conn, root, myNext)
+			if keepWhose == "theirs" && autoDelete {
+				deleteLocalFile(root, myNext.Path)
+			} else {
+				offerAndSendFile(conn, root, myNext)
+			}
 			myNext, myAny = <-myFiles
 		} else {
 			resolve(conn, root, myNext, svrNext)
@@ -102,6 +110,26 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 	} else {
 		// Could not automatically resolve.
 		logWarning("Failed to resolve", mine.Path, "automatically; mod times match.")
+	}
+}
+
+// Deletes the client's version of a file that has been deleted on the server.
+func deleteLocalFile(root, name string) {
+	logVerbose("Deleting", name)
+	checkError(os.RemoveAll(path.Join(root, name)))
+}
+
+// Asks the server to delete their version of a file that has been deleted on
+// the client.
+func requestFileDeletion(conn net.Conn, path string) {
+	logVerbose("Asking server to delete", path)
+	checkError(send(conn, FileDeletionRequest { Path: path }))
+
+	yes, err := expectBool(conn)
+	checkError(err)
+
+	if !yes {
+		logWarning("Server refused to delete", path)
 	}
 }
 

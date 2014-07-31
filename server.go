@@ -63,6 +63,8 @@ func handleConnection(conn net.Conn, root string) {
 			default:
 				panic(fmt.Errorf("Unrecognized command: %d", msg))
 			}
+		case MsgFileDeletionRequest:
+			handleMsgFileDeletionRequest(conn, root, msg.(FileDeletionRequest))
 		case MsgFileOffer:
 			handleMsgFileOffer(conn, root, msg.(FileOffer))
 		case MsgFileRequest:
@@ -73,11 +75,27 @@ func handleConnection(conn net.Conn, root string) {
 	}
 }
 
+var lastSentFilePath string
+
 func handleCmdRequestNextFileInfo(conn net.Conn, files <-chan FileInfo) {
 	fi, ok := <-files
 	if ok {
 		checkError(send(conn, true))
 		checkError(send(conn, fi))
+		lastSentFilePath = fi.Path
+	} else {
+		checkError(send(conn, false))
+	}
+}
+
+func handleMsgFileDeletionRequest(conn net.Conn, root string, req FileDeletionRequest) {
+	logVerbose("Client requested deletion of", req.Path)
+
+	// Only honor the deletion if this was the last file the server informed
+	// the client of. Otherwise, the client could be trying something sneaky...
+	if lastSentFilePath == req.Path {
+		checkError(send(conn, true))
+		deleteLocalFile(root, req.Path)
 	} else {
 		checkError(send(conn, false))
 	}

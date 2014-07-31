@@ -28,6 +28,7 @@ const (
 	MsgBool MessageType = iota
 	MsgCommand
 	MsgFile
+	MsgFileDeletionRequest
 	MsgFileInfo
 	MsgFileOffer
 	MsgFileRequest
@@ -44,6 +45,7 @@ var MessageTypeNames = map[MessageType]string {
 	MsgBool: "MsgBool",
 	MsgCommand: "MsgCommand",
 	MsgFile: "MsgFile",
+	MsgFileDeletionRequest: "MsgFileDeletionRequest",
 	MsgFileInfo: "MsgFileInfo",
 	MsgFileOffer: "MsgFileOffer",
 	MsgFileRequest: "MsgFileRequest",
@@ -61,6 +63,10 @@ type Command int32
 const (
 	CmdRequestNextFileInfo Command = iota
 )
+
+type FileDeletionRequest struct {
+	Path string
+}
 
 type FileInfo struct {
 	Path string
@@ -87,6 +93,8 @@ func send(conn io.Writer, msg Message) (err error) {
 		err = sendBool(conn, msg)
 	case Command:
 		err = sendCommand(conn, msg)
+	case FileDeletionRequest:
+		err = sendFileDeletionRequest(conn, msg)
 	case FileInfo:
 		err = sendFileInfo(conn, msg)
 	case FileOffer:
@@ -142,6 +150,8 @@ func read(conn io.Reader, msgType MessageType) (msg Message, err error) {
 		msg, err = recvBool(conn)
 	case MsgCommand:
 		msg, err = recvCommand(conn)
+	case MsgFileDeletionRequest:
+		msg, err = recvFileDeletionRequest(conn)
 	case MsgFileInfo:
 		msg, err = recvFileInfo(conn)
 	case MsgFileOffer:
@@ -364,6 +374,26 @@ func recvFile(conn io.Reader, expected FileInfo, targetPath string, overwrite bo
 
 	// Update the modtime of the file to match the provider's.
 	err = os.Chtimes(targetPath, fi.ModTime, fi.ModTime)
+	return
+}
+
+func sendFileDeletionRequest(conn io.Writer, req FileDeletionRequest) (err error) {
+	err = writeMessageType(conn, MsgFileDeletionRequest)
+	if err != nil {
+		return
+	}
+
+	err = send(conn, req.Path)
+	return
+}
+
+func recvFileDeletionRequest(conn io.Reader) (req FileDeletionRequest, err error) {
+	path, err := expectString(conn)
+	if err != nil {
+		return
+	}
+
+	req.Path = path
 	return
 }
 
