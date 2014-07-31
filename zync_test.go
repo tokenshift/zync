@@ -122,6 +122,22 @@ func expectContent(t *testing.T, dir, fname, content string) {
 	}
 }
 
+// Checks that the specified file exists in the specified folder.
+func expectExists(t *testing.T, dir, fname string) {
+	_, err := os.Stat(path.Join(dir, fname))
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// Checks that the specified file exists in the specified folder.
+func expectNotExists(t *testing.T, dir, fname string) {
+	_, err := os.Stat(path.Join(dir, fname))
+	if err == nil {
+		t.Errorf("Did not expect %s%s to exist.", dir, fname)
+	}
+}
+
 // The client should send any files the server is missing to it.
 func TestSendingFileToServer(t *testing.T) {
 	svrFolder, svr := zyncExecAsync("-s")
@@ -219,5 +235,35 @@ func TestReceivingOlderFileFromServer(t *testing.T) {
 		zyncExec(dir, "-c", "localhost", "-v", "-k", "theirs")
 		expectContent(t, svrDir, fname, "TestReceivingOlderFileFromServer2")
 		expectContent(t, dir, fname, "TestReceivingOlderFileFromServer2")
+	})
+}
+
+// If "--keep mine" and "--delete" are specified, files that the client does
+// not have will be deleted from the server.
+func TestDeletingFileFromServer(t *testing.T) {
+	svrDir, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	withTempDir(func(dir string) {
+		fname := createTestFile(svrDir, "", "TestDeletingFileFromServer")
+		expectExists(t, svrDir, fname)
+
+		zyncExec(dir, "-c", "localhost", "-v", "-k", "mine", "-d")
+		expectNotExists(t, svrDir, fname)
+	})
+}
+
+// If "--keep theirs" and "--delete" are specified, files that the server does
+// not have will be deleted from the server.
+func TestDeletingFileFromClient(t *testing.T) {
+	_, svr := zyncExecAsync("-s")
+	defer close(svr)
+
+	withTempDir(func(dir string) {
+		fname := createTestFile(dir, "", "TestDeletingFileFromClient")
+		expectExists(t, dir, fname)
+
+		zyncExec(dir, "-c", "localhost", "-v", "-k", "theirs", "-d")
+		expectNotExists(t, dir, fname)
 	})
 }

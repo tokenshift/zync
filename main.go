@@ -42,7 +42,17 @@ func main() {
 		}
 
 		_, keepWhose, args = argOption(args, "keep", "k")
+		if keepWhose != "" && keepWhose != "theirs" && keepWhose != "mine" {
+			fmt.Fprintln(os.Stderr, "--keep (-k) must be 'theirs' or 'mine'.")
+			os.Exit(1)
+		}
+
 		autoDelete, args = argFlag(args, "delete", "d")
+		if autoDelete && keepWhose == "" {
+			fmt.Fprintln(os.Stderr, "--delete (-d) can only be used in combination with --keep (-k).")
+			os.Exit(1)
+		}
+
 		reverse, args = argFlag(args, "reverse", "r")
 
 		runClient(connectUri)
