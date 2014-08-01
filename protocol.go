@@ -340,7 +340,7 @@ func recvFile(conn io.Reader, expected FileInfo, targetPath string, overwrite bo
 	}
 
 	if fi.Path != expected.Path {
-		return fmt.Errorf("Requested %v, server sent %v.", expected.Path, fi.Path)
+		return fmt.Errorf("Expected %v, server sent %v.", expected.Path, fi.Path)
 	}
 
 	if fi.Size > MaxFileSize {
@@ -350,16 +350,20 @@ func recvFile(conn io.Reader, expected FileInfo, targetPath string, overwrite bo
 	// File is saved to a temp file until fully received.
 	temp, err := ioutil.TempFile("", "zync")
 	if err != nil {
-		return
+		return err
 	}
 
 	written, err := io.CopyN(temp, conn, fi.Size)
 	if err != nil {
+		temp.Close()
 		return
 	}
 	if written != fi.Size {
+		temp.Close()
 		return fmt.Errorf("Failed to receive full contents of %s (%d bytes)", expected.Path, fi.Size)
 	}
+
+	temp.Close()
 
 	err = checkMessageTerminator(conn)
 	if err != nil {
@@ -367,6 +371,13 @@ func recvFile(conn io.Reader, expected FileInfo, targetPath string, overwrite bo
 	}
 
 	// Move the temp file to the specified location.
+	if overwrite {
+		err = os.Remove(targetPath)
+		if err != nil && !os.IsNotExist(err) {
+			return
+		}
+	}
+
 	err = os.Rename(temp.Name(), targetPath)
 	if err != nil {
 		return

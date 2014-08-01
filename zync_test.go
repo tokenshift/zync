@@ -5,7 +5,7 @@ import "io"
 import "io/ioutil"
 import "os"
 import "os/exec"
-import "path"
+import "path/filepath"
 import "strings"
 import "testing"
 import "time"
@@ -48,7 +48,7 @@ func createTestFile(dir string, name string, content string) (fname string) {
 	if name == "" {
 		f, err = ioutil.TempFile(dir, "zync")
 	} else {
-		f, err = os.Create(path.Join(dir, name))
+		f, err = os.Create(filepath.Join(dir, name))
 	}
 
 	if err != nil {
@@ -59,7 +59,7 @@ func createTestFile(dir string, name string, content string) (fname string) {
 
 	fmt.Fprint(f, content)
 
-	return path.Base(f.Name())
+	return filepath.Base(f.Name())
 }
 
 // Executes zync with the specified arguments in a new temporary directory.
@@ -68,7 +68,7 @@ func createTestFile(dir string, name string, content string) (fname string) {
 func zyncExecAsync(args ...string) (dir string, sig chan bool) {
 	dir = createTempDir()
 
-	zync := path.Join(zyncDir, "zync")
+	zync := filepath.Join(zyncDir, "zync")
 	cmd := exec.Command(zync, args...)
 	cmd.Dir = dir
 	cmd.Stdout = prefixWriter { os.Stdout, "SERVER (OUT)" }
@@ -88,10 +88,7 @@ func zyncExecAsync(args ...string) (dir string, sig chan bool) {
 			panic(err)
 		}
 
-		err := os.RemoveAll(dir)
-		if err != nil {
-			panic(err)
-		}
+		os.RemoveAll(dir)
 	}()
 
 	return
@@ -99,7 +96,7 @@ func zyncExecAsync(args ...string) (dir string, sig chan bool) {
 
 // Executes zync with the specified arguments in the specified directory.
 func zyncExec(dir string, args ...string) {
-	zync := path.Join(zyncDir, "zync")
+	zync := filepath.Join(zyncDir, "zync")
 	cmd := exec.Command(zync, args...)
 	cmd.Dir = dir
 	cmd.Stdout = prefixWriter { os.Stdout, "CLIENT (OUT)" }
@@ -116,14 +113,16 @@ func zyncExec(dir string, args ...string) {
 func withTempDir(do func(dir string)) {
 	dir := createTempDir()
 
-	defer os.RemoveAll(dir)
+	defer func () {
+		os.RemoveAll(dir)
+	}()
 
 	do(dir)
 }
 
 // Creates a test folder in the specified directory.
 func createDir(root, name string) string {
-	name = path.Join(root, name)
+	name = filepath.Join(root, name)
 
 	err := os.MkdirAll(name, os.ModeDir | 0700)
 	if err != nil {
@@ -133,14 +132,17 @@ func createDir(root, name string) string {
 	return name
 }
 
-// Checks that specified file exists in the specified folder with the specified
-// content.
+// Checks that specified file exists in the specified folder and has the
+// specified content.
 func expectContent(t *testing.T, dir, fname, content string) {
-	f, err := os.Open(path.Join(dir, fname))
+	path := filepath.Join(dir, fname)
+
+	f, err := os.Open(path)
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer f.Close()
 
 	data, err := ioutil.ReadAll(f)
 	if err != nil {
@@ -155,7 +157,7 @@ func expectContent(t *testing.T, dir, fname, content string) {
 
 // Checks that the specified file exists in the specified folder.
 func expectExists(t *testing.T, dir, fname string) {
-	_, err := os.Stat(path.Join(dir, fname))
+	_, err := os.Stat(filepath.Join(dir, fname))
 	if err != nil {
 		t.Error(err)
 	}
@@ -163,7 +165,7 @@ func expectExists(t *testing.T, dir, fname string) {
 
 // Checks that the specified file exists in the specified folder.
 func expectNotExists(t *testing.T, dir, fname string) {
-	_, err := os.Stat(path.Join(dir, fname))
+	_, err := os.Stat(filepath.Join(dir, fname))
 	if err == nil {
 		t.Errorf("Did not expect %s%s to exist.", dir, fname)
 	}
@@ -171,26 +173,28 @@ func expectNotExists(t *testing.T, dir, fname string) {
 
 // The client should send any files the server is missing to it.
 func TestSendingFileToServer(t *testing.T) {
-	svrFolder, svr := zyncExecAsync("-s", "-v")
+	svrDir, svr := zyncExecAsync("-s", "-v")
 	defer close(svr)
 
 	withTempDir(func(dir string) {
 		fname := createTestFile(dir, "", "TestSendingFileToServer")
 		zyncExec(dir, "-c", "localhost")
 
-		expectContent(t, svrFolder, fname, "TestSendingFileToServer")
+		expectContent(t, dir, fname, "TestSendingFileToServer")
+		expectContent(t, svrDir, fname, "TestSendingFileToServer")
 	})
 }
 
 // The client should request any files it is missing from the server.
 func TestReceivingFileFromServer(t *testing.T) {
-	svrFolder, svr := zyncExecAsync("-s", "-v")
+	svrDir, svr := zyncExecAsync("-s", "-v")
 	defer close(svr)
 
-	fname := createTestFile(svrFolder, "", "TestReceivingFileFromServer")
+	fname := createTestFile(svrDir, "", "TestReceivingFileFromServer")
 
 	withTempDir(func(dir string) {
 		zyncExec(dir, "-c", "localhost")
+		expectContent(t, svrDir, fname, "TestReceivingFileFromServer")
 		expectContent(t, dir, fname, "TestReceivingFileFromServer")
 	})
 }
@@ -205,11 +209,11 @@ func TestSendingNewerFileToServer(t *testing.T) {
 		createTestFile(svrDir, fname, "TestSendingNewerFileToServer2")
 
 		future := time.Now().Add(5 * time.Minute)
-		os.Chtimes(path.Join(dir, fname), future, future)
+		os.Chtimes(filepath.Join(dir, fname), future, future)
 
 		zyncExec(dir, "-c", "localhost", "-v")
-		expectContent(t, svrDir, fname, "TestSendingNewerFileToServer1")
 		expectContent(t, dir, fname, "TestSendingNewerFileToServer1")
+		expectContent(t, svrDir, fname, "TestSendingNewerFileToServer1")
 	})
 }
 
@@ -223,11 +227,11 @@ func TestReceivingNewerFileFromServer(t *testing.T) {
 		createTestFile(svrDir, fname, "TestReceivingNewerFileFromServer2")
 
 		future := time.Now().Add(5 * time.Minute)
-		os.Chtimes(path.Join(svrDir, fname), future, future)
+		os.Chtimes(filepath.Join(svrDir, fname), future, future)
 
 		zyncExec(dir, "-c", "localhost", "-v")
-		expectContent(t, svrDir, fname, "TestReceivingNewerFileFromServer2")
 		expectContent(t, dir, fname, "TestReceivingNewerFileFromServer2")
+		expectContent(t, svrDir, fname, "TestReceivingNewerFileFromServer2")
 	})
 }
 
@@ -242,11 +246,11 @@ func TestSendingOlderFileToServer(t *testing.T) {
 		createTestFile(svrDir, fname, "TestSendingOlderFileToServer2")
 
 		future := time.Now().Add(5 * time.Minute)
-		os.Chtimes(path.Join(svrDir, fname), future, future)
+		os.Chtimes(filepath.Join(svrDir, fname), future, future)
 
 		zyncExec(dir, "-c", "localhost", "-v", "-k", "mine")
-		expectContent(t, svrDir, fname, "TestSendingOlderFileToServer1")
 		expectContent(t, dir, fname, "TestSendingOlderFileToServer1")
+		expectContent(t, svrDir, fname, "TestSendingOlderFileToServer1")
 	})
 }
 
@@ -261,11 +265,11 @@ func TestReceivingOlderFileFromServer(t *testing.T) {
 		createTestFile(svrDir, fname, "TestReceivingOlderFileFromServer2")
 
 		future := time.Now().Add(5 * time.Minute)
-		os.Chtimes(path.Join(dir, fname), future, future)
+		os.Chtimes(filepath.Join(dir, fname), future, future)
 
 		zyncExec(dir, "-c", "localhost", "-v", "-k", "theirs")
-		expectContent(t, svrDir, fname, "TestReceivingOlderFileFromServer2")
 		expectContent(t, dir, fname, "TestReceivingOlderFileFromServer2")
+		expectContent(t, svrDir, fname, "TestReceivingOlderFileFromServer2")
 	})
 }
 
@@ -466,7 +470,7 @@ func TestServerRestrictingDelete(t *testing.T) {
 		createTestFile(dir, "TestFile2", "TestFile2b")
 
 		future := time.Now().Add(5 * time.Minute)
-		os.Chtimes(path.Join(dir, "TestFile2"), future, future)
+		os.Chtimes(filepath.Join(dir, "TestFile2"), future, future)
 
 
 		expectContent(t, svrDir, "TestFile1", "TestFile1")
@@ -495,7 +499,7 @@ func TestServerRestrictingAll(t *testing.T) {
 		createTestFile(dir, "TestFile2", "TestFile2b")
 
 		future := time.Now().Add(5 * time.Minute)
-		os.Chtimes(path.Join(dir, "TestFile2"), future, future)
+		os.Chtimes(filepath.Join(dir, "TestFile2"), future, future)
 
 
 		expectContent(t, svrDir, "TestFile1", "TestFile1")

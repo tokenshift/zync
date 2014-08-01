@@ -4,7 +4,7 @@ import "fmt"
 import "io"
 import "net"
 import "os"
-import "path"
+import "path/filepath"
 
 func runServer() {
 	root, err := os.Getwd()
@@ -111,7 +111,7 @@ var fileBuffer = make([]byte, 1024 * 1024)
 func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
 	logVerbose("Client requested", req.Path)
 
-	abs := path.Join(root, req.Path)
+	abs := filepath.Join(root, req.Path)
 	if fStat, err := os.Stat(abs); os.IsNotExist(err) {
 		logWarning("Client requested nonexistant file", req.Path)
 		checkError(send(conn, false))
@@ -126,7 +126,7 @@ func handleMsgFileRequest(conn net.Conn, root string, req FileRequest) {
 }
 
 func handleMsgFileOffer(conn net.Conn, root string, offer FileOffer) {
-	path := path.Join(root, offer.Info.Path)
+	path := filepath.Join(root, offer.Info.Path)
 
 	_, err := os.Stat(path)
 	if restrictAll && !os.IsNotExist(err) {

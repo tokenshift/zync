@@ -3,7 +3,7 @@ package main
 import "fmt"
 import "net"
 import "os"
-import "path"
+import "path/filepath"
 import "regexp"
 
 var portRx = regexp.MustCompile(":\\d+$")
@@ -30,6 +30,7 @@ func runClient(connectUri string) {
 	logInfo("Connecting to Zync server at", connectUri)
 	conn, err := net.Dial("tcp", connectUri)
 	checkError(err)
+	defer conn.Close()
 
 	// Version Check
 	checkError(send(conn, ProtoVersion))
@@ -116,7 +117,7 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 // Deletes the client's version of a file that has been deleted on the server.
 func deleteLocalFile(root, name string) {
 	logVerbose("Deleting", name)
-	checkError(os.RemoveAll(path.Join(root, name)))
+	checkError(os.RemoveAll(filepath.Join(root, name)))
 }
 
 // Asks the server to delete their version of a file that has been deleted on
@@ -136,7 +137,7 @@ func requestFileDeletion(conn net.Conn, path string) {
 // Requests the specified file from the server, and saves it to the relevant
 // location on disk.
 func requestAndSaveFile(conn net.Conn, root string, fi FileInfo, overwrite bool) {
-	abs := path.Join(root, fi.Path)
+	abs := filepath.Join(root, fi.Path)
 
 	// If this is a folder, just go ahead and create it; no need to ask the
 	// server for anything.
@@ -169,7 +170,7 @@ func offerAndSendFile(conn net.Conn, root string, fi FileInfo) {
 
 	if yes {
 		logInfo("Sending", fi.Path, "to server.")
-		path := path.Join(root, fi.Path)
+		path := filepath.Join(root, fi.Path)
 		checkError(sendFile(conn, fi, path))
 	} else {
 		logVerbose("Server refused to accept", fi.Path)
