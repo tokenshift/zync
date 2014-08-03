@@ -1,12 +1,27 @@
 package main
 
+import "bufio"
 import "fmt"
 import "net"
 import "os"
 import "path/filepath"
 import "regexp"
+import "strings"
+import "time"
 
 var portRx = regexp.MustCompile(":\\d+$")
+
+type ConflictType int
+const (
+	// Different versions of the file exist on the server and the client.
+	Conflict ConflictType = iota
+
+	// The client is missing a file that the server has.
+	Missing
+
+	// The server is missing a file that the client has.
+	New
+)
 
 func runClient(connectUri string) {
 	// Client bails on any error.
@@ -61,14 +76,18 @@ func runClient(connectUri string) {
 	svrNext, svrAny := requestNextFileInfo(conn)
 	for myAny || svrAny {
 		if svrAny && (!myAny || svrNext.Path < myNext.Path) {
-			if keepWhose == "mine" && autoDelete {
+			if interactive {
+				promptForAction(conn, root, Missing, svrNext, myNext)
+			} else if keepWhose == "mine" && autoDelete {
 				requestFileDeletion(conn, svrNext.Path)
 			} else {
 				requestAndSaveFile(conn, root, svrNext, false)
 			}
 			svrNext, svrAny = requestNextFileInfo(conn)
 		} else if myAny && (!svrAny || svrNext.Path > myNext.Path) {
-			if keepWhose == "theirs" && autoDelete {
+			if interactive {
+				promptForAction(conn, root, New, svrNext, myNext)
+			} else if keepWhose == "theirs" && autoDelete {
 				deleteLocalFile(root, myNext.Path)
 			} else {
 				offerAndSendFile(conn, root, myNext)
@@ -100,7 +119,9 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 		return
 	}
 
-	if keepWhose == "mine" || (keepWhose == "" && mine.ModTime.After(theirs.ModTime)) {
+	if interactive {
+		promptForAction(conn, root, Conflict, theirs, mine)
+	} else if keepWhose == "mine" || (keepWhose == "" && mine.ModTime.After(theirs.ModTime)) {
 		// Use the client's version.
 		logVerbose("Sending", mine.Path, "to server.")
 		offerAndSendFile(conn, root, mine)
@@ -111,6 +132,122 @@ func resolve(conn net.Conn, root string, mine FileInfo, theirs FileInfo) {
 	} else {
 		// Could not automatically resolve.
 		logWarning("Failed to resolve", mine.Path, "automatically; mod times match.")
+	}
+}
+
+// Asks the user what action should be taken for a specific file.
+func promptForAction(conn net.Conn, root string, ct ConflictType, theirs, mine FileInfo) {
+	switch (ct) {
+	case Conflict:
+		fmt.Println("CONFLICT:", mine.Path)
+
+		fmt.Printf("Server has: %d bytes ", theirs.Size)
+		if theirs.Size > mine.Size {
+			fmt.Print("(bigger)")
+		} else if theirs.Size < mine.Size {
+			fmt.Print("(smaller)")
+		} else {
+			fmt.Print("(same)")
+		}
+		fmt.Printf(", %s ", theirs.ModTime.Format(time.RFC3339))
+		if theirs.ModTime.After(mine.ModTime) {
+			fmt.Println("(newer)")
+		} else if theirs.ModTime.Before(mine.ModTime) {
+			fmt.Println("(older)")
+		} else {
+			fmt.Println("(same)")
+		}
+
+		fmt.Printf("Client has: %d bytes ", mine.Size)
+		if theirs.Size > mine.Size {
+			fmt.Print("(smaller)")
+		} else if theirs.Size < mine.Size {
+			fmt.Print("(bigger)")
+		} else {
+			fmt.Print("(same)")
+		}
+		fmt.Printf(", %s ", theirs.ModTime.Format(time.RFC3339))
+		if theirs.ModTime.After(mine.ModTime) {
+			fmt.Println("(older)")
+		} else if theirs.ModTime.Before(mine.ModTime) {
+			fmt.Println("(newer)")
+		} else {
+			fmt.Println("(same)")
+		}
+
+		action := requestUserInput("Action ([g]ive mine, [a]ccept theirs, [s]kip)",
+			keepWhose, "give", "accept", "skip")
+
+		switch action {
+		case "give":
+			logVerbose("Sending", mine.Path, "to server.")
+			offerAndSendFile(conn, root, mine)
+		case "accept":
+			logVerbose("Requesting", theirs.Path, "from server.")
+			requestAndSaveFile(conn, root, theirs, true)
+		case "skip":
+			logVerbose("Skipping", mine.Path)
+		}
+	case Missing:
+		fmt.Println("MISSING:", theirs.Path)
+		dflt := "accept"
+		if keepWhose == "mine" && autoDelete {
+			dflt = "delete"
+		}
+		action := requestUserInput("Action ([a]ccept theirs, [d]elete theirs, [s]kip)",
+			dflt, "accept", "delete", "skip")
+		switch action {
+		case "accept":
+			logVerbose("Requesting", theirs.Path, "from server.")
+			requestAndSaveFile(conn, root, theirs, true)
+		case "delete":
+			requestFileDeletion(conn, theirs.Path)
+		case "skip":
+			logVerbose("Skipping", theirs.Path)
+		}
+	case New:
+		fmt.Println("NEW:", mine.Path)
+		dflt := "give"
+		if keepWhose == "theirs" && autoDelete {
+			dflt = "delete"
+		}
+		action := requestUserInput("Action ([g]ive mine, [d]elete mine, [s]kip)",
+			dflt, "give", "delete", "skip")
+		switch action {
+		case "give":
+			logVerbose("Sending", mine.Path, "to server.")
+			offerAndSendFile(conn, root, mine)
+		case "delete":
+			deleteLocalFile(root, mine.Path)
+		case "skip":
+			logVerbose("Skipping", mine.Path)
+		}
+	}
+}
+
+// Helper function to request and parse user input."
+func requestUserInput(prompt, dflt string, options...string) string {
+	input := bufio.NewReader(os.Stdin)
+
+	for {
+		if dflt == "" {
+			fmt.Printf("%s: ", prompt)
+		} else {
+			fmt.Printf("%s: [%s] ", prompt, dflt[0:1])
+		}
+
+		line, err := input.ReadString('\n')
+		checkError(err)
+
+		line = strings.TrimSpace(line)
+
+		for _, opt := range(options) {
+			if line == opt || line[0] == opt[0] {
+				return opt
+			}
+		}
+
+		fmt.Println("Invalid input: %s", line)
 	}
 }
 

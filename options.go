@@ -2,7 +2,6 @@ package main
 
 // Global Options
 var hash = false
-var interactive = false
 var verbose = false
 
 // Server Options
@@ -14,3 +13,4 @@ var restrictAll = false
 var keepWhose = ""
 var autoDelete = false
 var reverse = false
+var interactive = false
