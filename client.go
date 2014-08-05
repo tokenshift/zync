@@ -166,7 +166,7 @@ func promptForAction(conn net.Conn, root string, ct ConflictType, theirs, mine F
 		} else {
 			fmt.Print("(same)")
 		}
-		fmt.Printf(", %s ", theirs.ModTime.Format(time.RFC3339))
+		fmt.Printf(", %s ", mine.ModTime.Format(time.RFC3339))
 		if theirs.ModTime.After(mine.ModTime) {
 			fmt.Println("(older)")
 		} else if theirs.ModTime.Before(mine.ModTime) {
@@ -175,8 +175,15 @@ func promptForAction(conn net.Conn, root string, ct ConflictType, theirs, mine F
 			fmt.Println("(same)")
 		}
 
+		dflt := ""
+		if keepWhose == "mine" {
+			dflt = "give"
+		} else if keepWhose == "theirs" {
+			dflt = "accept"
+		}
+
 		action := requestUserInput("Action ([g]ive mine, [a]ccept theirs, [s]kip)",
-			keepWhose, "give", "accept", "skip")
+			dflt, "give", "accept", "skip")
 
 		switch action {
 		case "give":
@@ -241,6 +248,10 @@ func requestUserInput(prompt, dflt string, options...string) string {
 
 		line = strings.TrimSpace(line)
 
+		if line == "" && dflt != "" {
+			return dflt
+		}
+
 		for _, opt := range(options) {
 			if line == opt || line[0] == opt[0] {
 				return opt
@@ -253,7 +264,7 @@ func requestUserInput(prompt, dflt string, options...string) string {
 
 // Deletes the client's version of a file that has been deleted on the server.
 func deleteLocalFile(root, name string) {
-	logVerbose("Deleting", name)
+	logInfo("Deleting", name)
 	checkError(os.RemoveAll(filepath.Join(root, name)))
 }
 
